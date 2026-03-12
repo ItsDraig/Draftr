@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>loldraftr.gg</title>
+<link rel="icon" type="image/png" href="icons/draftrIcon.png">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700&family=Barlow:wght@300;400;500&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #080810;
+    --surface:   #0e0e1a;
+    --surface2:  #13131f;
+    --border:    #1e1e30;
+    --border2:   #2a2a40;
+    --text:      #dcdcf0;
+    --muted:     #5a5a7a;
+    --dim:       #3a3a55;
+    --blue:      #4a9eff;
+    --blue-dim:  rgba(74,158,255,0.08);
+    --blue-glow: rgba(74,158,255,0.25);
+    --red:       #ff4a6b;
+    --red-dim:   rgba(255,74,107,0.08);
+    --red-glow:  rgba(255,74,107,0.25);
+    --gold:      #f0c040;
+    --gold-dim:  rgba(240,192,64,0.1);
+    --green:     #40c080;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    font-weight: 300;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* ── NAV ── */
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px;
+    height: 56px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: relative;
+  }
+  nav::after {
+    content: '';
+    position: absolute; bottom: -2px; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--blue), transparent);
+    opacity: 0.4;
+  }
+  .nav-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: 0.04em;
+    color: var(--text);
+  }
+  .nav-logo span { color: var(--blue); }
+  .nav-status { display: flex; align-items: center; gap: 20px; }
+  .api-status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem; letter-spacing: 0.08em;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .status-label { color: var(--muted); transition: color 0.3s; }
+  .status-label.connected { color: var(--green); }
+  .status-label.error { color: var(--red); }
+
+  /* ── MAIN LAYOUT ── */
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ── DRAFT PANEL ── */
+  .draft-panel {
+    padding: 32px;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 28px;
+    overflow-y: auto;
+  }
+  .draft-header { display: flex; align-items: baseline; justify-content: space-between; }
+  .draft-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; font-size: 0.7rem;
+    letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted);
+  }
+  .draft-phase {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem; color: var(--blue); letter-spacing: 0.1em;
+  }
+
+  /* ── TEAMS ── */
+  .teams { display: grid; grid-template-columns: 1fr 60px 1fr; gap: 0; align-items: start; }
+  .team-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; font-size: 0.65rem;
+    letter-spacing: 0.25em; text-transform: uppercase;
+    margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .team-label.blue { color: var(--blue); border-color: rgba(74,158,255,0.3); }
+  .team-label.red  { color: var(--red);  border-color: rgba(255,74,107,0.3); text-align: right; }
+  .slots { display: flex; flex-direction: column; gap: 6px; }
+  .slot {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 2px;
+    min-height: 52px; position: relative;
+    transition: border-color 0.2s, background 0.2s; cursor: pointer;
+  }
+  .slot.active { border-color: var(--blue); background: var(--blue-dim); box-shadow: inset 0 0 0 1px rgba(74,158,255,0.2), 0 0 12px rgba(74,158,255,0.08); }
+  .slot.active.red-side { border-color: var(--red); background: var(--red-dim); box-shadow: inset 0 0 0 1px rgba(255,74,107,0.2), 0 0 12px rgba(255,74,107,0.08); }
+  .slot.filled { cursor: default; }
+  .slot.filled:hover { border-color: var(--border2); }
+  .slot-num { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--dim); min-width: 16px; }
+  .slot-icon { width: 32px; height: 32px; border-radius: 2px; background: var(--border); overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .slot-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .slot-icon .icon-placeholder { font-family: 'Share Tech Mono', monospace; font-size: 0.55rem; color: var(--dim); }
+  .slot-info { flex: 1; min-width: 0; }
+  .slot-name { font-family: 'Barlow Condensed', sans-serif; font-weight: 500; font-size: 0.95rem; letter-spacing: 0.04em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot-name.empty { color: var(--dim); font-weight: 300; font-size: 0.8rem; font-family: 'Share Tech Mono', monospace; letter-spacing: 0.08em; }
+  .slot-role { font-family: 'Share Tech Mono', monospace; font-size: 0.58rem; color: var(--muted); margin-top: 2px; letter-spacing: 0.06em; }
+  .slot-remove { font-size: 0.7rem; color: var(--dim); background: none; border: none; cursor: pointer; padding: 2px 4px; line-height: 1; transition: color 0.2s; opacity: 0; }
+  .slot:hover .slot-remove { opacity: 1; }
+  .slot-remove:hover { color: var(--red); }
+  .slot-role-icon { width: 20px; height: 20px; flex-shrink: 0; opacity: 0.45; display: flex; align-items: center; justify-content: center; transition: opacity 0.2s; }
+  .slot:hover .slot-role-icon { opacity: 0.7; }
+  .slot.active .slot-role-icon { opacity: 0.9; }
+  .slot-role-icon img { width: 100%; height: 100%; object-fit: contain; }
+  .slot-role-icon .role-placeholder { width: 18px; height: 18px; border: 1px solid var(--dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-family: 'Share Tech Mono', monospace; font-size: 0.48rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0; }
+  .team.red .slot { flex-direction: row-reverse; }
+  .team.red .slot-num { text-align: right; }
+  .team.red .slot-name { text-align: right; }
+  .team.red .slot-role { text-align: right; }
+  .vs-col { display: flex; align-items: center; justify-content: center; padding-top: 44px; }
+  .vs { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1rem; color: var(--dim); letter-spacing: 0.1em; }
+
+  /* ── INPUT AREA ── */
+  .input-area { background: var(--surface); border: 1px solid var(--border); border-radius: 2px; padding: 20px; }
+  .input-prompt { font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; color: var(--blue); letter-spacing: 0.1em; margin-bottom: 12px; }
+  .input-prompt.red { color: var(--red); }
+  .input-prompt.done { color: var(--green); }
+  .champion-input-wrap { display: flex; gap: 8px; align-items: stretch; position: relative; }
+  .champion-input { flex: 1; background: var(--bg); border: 1px solid var(--border2); color: var(--text); font-family: 'Barlow Condensed', sans-serif; font-weight: 500; font-size: 1rem; letter-spacing: 0.06em; padding: 10px 14px; outline: none; border-radius: 2px; transition: border-color 0.2s, box-shadow 0.2s; }
+  .champion-input:focus { border-color: var(--blue); box-shadow: 0 0 0 1px rgba(74,158,255,0.2); }
+  .champion-input.red-focus:focus { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255,74,107,0.2); }
+  .champion-input::placeholder { color: var(--dim); font-weight: 300; }
+  .confirm-btn { padding: 10px 20px; background: var(--blue); color: var(--bg); border: none; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 2px; transition: background 0.2s, transform 0.1s; }
+  .confirm-btn:hover { background: #6ab4ff; }
+  .confirm-btn:active { transform: scale(0.97); }
+  .confirm-btn.red { background: var(--red); }
+  .confirm-btn.red:hover { background: #ff6e87; }
+  .confirm-btn:disabled { background: var(--dim); cursor: not-allowed; }
+  .autocomplete { position: absolute; top: 100%; left: 0; width: calc(100% - 90px); background: var(--surface2); border: 1px solid var(--border2); border-top: none; z-index: 100; max-height: 200px; overflow-y: auto; }
+  .autocomplete-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; transition: background 0.15s; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; font-size: 0.9rem; letter-spacing: 0.04em; }
+  .autocomplete-item:hover, .autocomplete-item.highlighted { background: var(--blue-dim); }
+  .autocomplete-item img { width: 24px; height: 24px; border-radius: 2px; object-fit: cover; }
+  .autocomplete-item .ac-name { color: var(--text); }
+  .autocomplete-item .ac-title { font-size: 0.68rem; color: var(--muted); font-weight: 300; margin-left: auto; font-family: 'Barlow', sans-serif; }
+
+  /* ── SIDE PANEL ── */
+  .side-panel { background: var(--surface); display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow-y: auto; }
+  .side-section { padding: 20px; border-bottom: 1px solid var(--border); }
+  .side-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.62rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .key-input-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .key-input { background: var(--bg); border: 1px solid var(--border2); color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; padding: 8px 12px; outline: none; border-radius: 2px; transition: border-color 0.2s; letter-spacing: 0.04em; }
+  .key-input:focus { border-color: var(--blue); }
+  .key-note { font-size: 0.65rem; color: var(--muted); font-family: 'Share Tech Mono', monospace; letter-spacing: 0.04em; line-height: 1.5; }
+  .key-btn { padding: 7px 14px; background: transparent; border: 1px solid var(--blue); color: var(--blue); font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: background 0.2s, color 0.2s; }
+  .key-btn:hover { background: var(--blue); color: var(--bg); }
+  .draft-log { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .log-entry { display: flex; align-items: center; gap: 8px; font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; letter-spacing: 0.05em; color: var(--muted); line-height: 1.4; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03); animation: logIn 0.2s ease forwards; }
+  .log-entry .log-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+  .log-entry.blue .log-dot { background: var(--blue); }
+  .log-entry.red .log-dot { background: var(--red); }
+  .log-entry.system .log-dot { background: var(--muted); }
+  .log-entry.success .log-dot { background: var(--green); }
+  .log-entry.warn .log-dot { background: var(--gold); }
+  .reset-btn { margin: 16px 20px; padding: 8px; background: transparent; border: 1px solid var(--border2); color: var(--muted); font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.72rem; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: border-color 0.2s, color 0.2s; }
+  .reset-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes logIn { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
+  @keyframes slotFill { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .slot.filled .slot-info { animation: slotFill 0.25s ease forwards; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface2); border: 1px solid var(--red); color: var(--red); font-family: 'Share Tech Mono', monospace; font-size: 0.72rem; letter-spacing: 0.06em; padding: 10px 20px; border-radius: 2px; z-index: 1000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* ── ANALYSIS PANEL ── */
+  #analysisPanel { border-top: 1px solid var(--border); padding-top: 28px; animation: fadeInUp 0.4s ease forwards; }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .analysis-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+  .analysis-vs-label { font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; color: var(--muted); letter-spacing: 0.12em; }
+  .analysis-grid { display: grid; grid-template-columns: 1fr 120px 1fr; gap: 12px; align-items: start; }
+  .analysis-card { background: var(--surface2); border: 1px solid var(--border); padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .blue-card { border-top: 2px solid var(--blue); }
+  .red-card  { border-top: 2px solid var(--red); }
+  .card-top { display: flex; align-items: center; gap: 14px; }
+  .grade-badge { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 2.4rem; line-height: 1; min-width: 44px; text-align: center; transition: color 0.4s; }
+  .grade-D { color: #ff3a3a; }
+  .grade-C { color: #ff8c69; }
+  .grade-B { color: #9090a8; }
+  .grade-A { color: var(--blue); }
+  .grade-S { color: var(--gold); text-shadow: 0 0 12px rgba(240,192,64,0.5); }
+  .card-meta { flex: 1; }
+  .card-label { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); margin-bottom: 2px; }
+  .card-team-name { font-family: 'Share Tech Mono', monospace; font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; }
+  .dmg-section { display: flex; flex-direction: column; gap: 6px; }
+  .dmg-label { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .dmg-bar { display: flex; height: 8px; border-radius: 1px; overflow: hidden; background: var(--border); gap: 1px; }
+  .dmg-phys { background: #e07830; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); height: 100%; }
+  .dmg-magic { background: #5ab4f0; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); height: 100%; flex: 1; }
+  .dmg-legend { display: flex; gap: 14px; font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--muted); }
+  .dmg-legend-item { display: flex; align-items: center; gap: 5px; }
+  .dmg-dot { width: 7px; height: 7px; border-radius: 1px; flex-shrink: 0; }
+  .dmg-dot.phys  { background: #e07830; }
+  .dmg-dot.magic { background: #5ab4f0; }
+  .score-breakdown { display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .breakdown-row { display: flex; align-items: center; font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.04em; gap: 0; }
+  .breakdown-row-label { width: 82px; flex-shrink: 0; }
+  .breakdown-bar-wrap { flex: 1; height: 3px; background: var(--border); border-radius: 1px; overflow: hidden; }
+  .breakdown-bar-fill { height: 100%; background: var(--dim); transition: width 0.5s ease; border-radius: 1px; }
+  .breakdown-val { color: var(--text); width: 32px; text-align: right; flex-shrink: 0; margin-left: 8px; }
+  .verdict-col { display: flex; align-items: center; justify-content: center; padding-top: 8px; }
+  .verdict-box { background: var(--surface); border: 1px solid var(--border); padding: 16px 12px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+  .verdict-label { font-family: 'Share Tech Mono', monospace; font-size: 0.55rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+  .verdict-team { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.06em; text-transform: uppercase; transition: color 0.4s; }
+  .verdict-delta { font-family: 'Share Tech Mono', monospace; font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
+
+  /* ── FOOTER ── */
+  .app-footer {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .footer-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 32px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+  .footer-toggle:hover { background: var(--surface2); }
+
+  .footer-toggle-left {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .footer-toggle-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; font-size: 0.65rem;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .footer-toggle-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem; color: var(--blue);
+    border: 1px solid rgba(74,158,255,0.3);
+    padding: 2px 8px; letter-spacing: 0.08em;
+  }
+  .footer-toggle-icon {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem; color: var(--dim);
+    transition: transform 0.3s ease;
+  }
+  .footer-toggle-icon.open { transform: rotate(180deg); }
+
+  .footer-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.35s cubic-bezier(0.4,0,0.2,1);
+    border-top: 1px solid transparent;
+    transition: grid-template-rows 0.35s cubic-bezier(0.4,0,0.2,1), border-color 0.35s;
+  }
+  .footer-body.open {
+    grid-template-rows: 1fr;
+    border-color: var(--border);
+  }
+  .footer-body-inner { overflow: hidden; }
+
+  .footer-content {
+    padding: 32px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .algo-section { display: flex; flex-direction: column; gap: 12px; }
+
+  .algo-section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; font-size: 0.65rem;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--accent, var(--blue));
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .algo-section-title .algo-weight {
+    margin-left: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+  }
+
+  .algo-body {
+    font-size: 0.82rem; color: var(--muted);
+    line-height: 1.7; font-weight: 300;
+  }
+  .algo-body strong { color: var(--text); font-weight: 500; }
+
+  .algo-formula {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem; color: var(--text);
+    letter-spacing: 0.04em; line-height: 1.8;
+    margin-top: 4px;
+  }
+
+  .grade-scale {
+    display: flex; flex-direction: column; gap: 5px; margin-top: 4px;
+  }
+  .grade-scale-row {
+    display: flex; align-items: center; gap: 10px;
+    font-family: 'Share Tech Mono', monospace; font-size: 0.62rem;
+  }
+  .grade-scale-letter {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700; font-size: 1rem;
+    min-width: 18px; text-align: center; line-height: 1;
+  }
+  .grade-scale-bar {
+    flex: 1; height: 4px; background: var(--border); border-radius: 1px; overflow: hidden;
+  }
+  .grade-scale-fill { height: 100%; border-radius: 1px; }
+  .grade-scale-range { color: var(--muted); font-size: 0.58rem; min-width: 52px; text-align: right; }
+
+  .archetype-tags {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
+  }
+  .arch-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem; letter-spacing: 0.06em;
+    padding: 3px 9px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 1px;
+  }
+
+  .footer-divider {
+    grid-column: 1 / -1;
+    height: 1px; background: var(--border); margin: 4px 0;
+  }
+
+  .footer-note {
+    grid-column: 1 / -1;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem; color: var(--dim);
+    letter-spacing: 0.06em; line-height: 1.7;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .side-panel { border-left: none; border-top: 1px solid var(--border); }
+    .analysis-grid { grid-template-columns: 1fr; }
+    .verdict-col { order: -1; }
+    .footer-content { grid-template-columns: 1fr; }
+  }
+
+  /* ── INFO FOOTER ── */
+  .info-footer {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .info-toggle {
+    width: 100%;
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 32px;
+    background: none; border: none; cursor: pointer;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+    letter-spacing: 0.08em;
+    text-align: left;
+    transition: color 0.2s;
+  }
+  .info-toggle:hover { color: var(--text); }
+  .info-toggle-icon {
+    font-size: 0.6rem;
+    transition: transform 0.25s ease;
+    display: inline-block;
+    color: var(--dim);
+  }
+  .info-toggle-icon.open { transform: rotate(90deg); }
+  .info-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s ease;
+    overflow: hidden;
+  }
+  .info-body.open { grid-template-rows: 1fr; }
+  .info-body-inner {
+    overflow: hidden;
+    padding: 0 32px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .info-body-inner p {
+    font-size: 0.7rem;
+    color: var(--muted);
+    line-height: 1.75;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 300;
+    max-width: 900px;
+  }
+  .info-body-inner p strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* ── STRENGTHS & WEAKNESSES ── */
+  .sw-section {
+    display: flex; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .sw-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .sw-list {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .sw-item {
+    display: flex; align-items: baseline; gap: 6px;
+    font-family: 'Barlow', sans-serif;
+    font-size: 0.7rem; font-weight: 300;
+    color: var(--muted); line-height: 1.4;
+  }
+  .sw-icon {
+    font-size: 0.55rem; flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .sw-icon.str { color: var(--green); }
+  .sw-icon.wk  { color: var(--red);   }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="nav-logo">draftr<span>.gg</span></div>
+  <div class="nav-status">
+    <div class="api-status">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-label" id="statusLabel">NO API KEY</span>
+    </div>
+  </div>
+</nav>
+
+<div class="app">
+
+  <!-- Draft Panel -->
+  <div class="draft-panel">
+    <div class="draft-header">
+      <span class="draft-title">Champion Draft</span>
+      <span class="draft-phase" id="draftPhase">— AWAITING PICKS —</span>
+    </div>
+
+    <div class="teams">
+      <!-- Blue Team -->
+      <div class="team blue">
+        <div class="team-label blue">Blue Side</div>
+        <div class="slots" id="blueSlots">
+          <div class="slot" id="blue-0" onclick="activateSlot(0,'blue')">
+            <span class="slot-num">1</span>
+            <div class="slot-role-icon"><div class="role-placeholder">TOP</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          </div>
+          <div class="slot" id="blue-1" onclick="activateSlot(1,'blue')">
+            <span class="slot-num">2</span>
+            <div class="slot-role-icon"><div class="role-placeholder">JGL</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          </div>
+          <div class="slot" id="blue-2" onclick="activateSlot(2,'blue')">
+            <span class="slot-num">3</span>
+            <div class="slot-role-icon"><div class="role-placeholder">MID</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          </div>
+          <div class="slot" id="blue-3" onclick="activateSlot(3,'blue')">
+            <span class="slot-num">4</span>
+            <div class="slot-role-icon"><div class="role-placeholder">BOT</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          </div>
+          <div class="slot" id="blue-4" onclick="activateSlot(4,'blue')">
+            <span class="slot-num">5</span>
+            <div class="slot-role-icon"><div class="role-placeholder">SUP</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VS -->
+      <div class="vs-col"><div class="vs">VS</div></div>
+
+      <!-- Red Team -->
+      <div class="team red">
+        <div class="team-label red">Red Side</div>
+        <div class="slots" id="redSlots">
+          <div class="slot" id="red-0" onclick="activateSlot(0,'red')">
+            <span class="slot-num">1</span>
+            <div class="slot-role-icon"><div class="role-placeholder">TOP</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+            <button class="slot-remove" onclick="removeChamp(event,0,'red')">✕</button>
+          </div>
+          <div class="slot" id="red-1" onclick="activateSlot(1,'red')">
+            <span class="slot-num">2</span>
+            <div class="slot-role-icon"><div class="role-placeholder">JGL</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+            <button class="slot-remove" onclick="removeChamp(event,1,'red')">✕</button>
+          </div>
+          <div class="slot" id="red-2" onclick="activateSlot(2,'red')">
+            <span class="slot-num">3</span>
+            <div class="slot-role-icon"><div class="role-placeholder">MID</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+            <button class="slot-remove" onclick="removeChamp(event,2,'red')">✕</button>
+          </div>
+          <div class="slot" id="red-3" onclick="activateSlot(3,'red')">
+            <span class="slot-num">4</span>
+            <div class="slot-role-icon"><div class="role-placeholder">BOT</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+            <button class="slot-remove" onclick="removeChamp(event,3,'red')">✕</button>
+          </div>
+          <div class="slot" id="red-4" onclick="activateSlot(4,'red')">
+            <span class="slot-num">5</span>
+            <div class="slot-role-icon"><div class="role-placeholder">SUP</div></div>
+            <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+            <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+            <button class="slot-remove" onclick="removeChamp(event,4,'red')">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-prompt" id="inputPrompt">SELECT BLUE SIDE — PICK 1 OF 5</div>
+      <div class="champion-input-wrap">
+        <input type="text" class="champion-input" id="champInput" placeholder="Champion name..."
+          autocomplete="off" onkeydown="handleInputKey(event)" oninput="handleInputChange(this.value)" />
+        <button class="confirm-btn" id="confirmBtn" onclick="confirmPick()">Pick</button>
+        <div class="autocomplete" id="autocomplete" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Analysis Panel -->
+    <div id="analysisPanel" style="display:none;">
+      <div class="analysis-header">
+        <span class="draft-title">Draft Analysis</span>
+        <span class="analysis-vs-label">BLUE <span style="color:var(--dim)">vs</span> RED</span>
+      </div>
+      <div class="analysis-grid">
+        <div class="analysis-card blue-card">
+          <div class="card-top">
+            <div class="grade-badge" id="blueGrade">—</div>
+            <div class="card-meta">
+              <div class="card-label" id="blueLabel">—</div>
+              <div class="card-team-name" style="color:var(--blue)">Blue Side</div>
+            </div>
+          </div>
+          <div class="dmg-section">
+            <div class="dmg-label">Damage Profile</div>
+            <div class="dmg-bar">
+              <div class="dmg-phys" id="blueDmgPhys" style="width:50%"></div>
+              <div class="dmg-magic" id="blueDmgMagic" style="width:50%"></div>
+            </div>
+            <div class="dmg-legend">
+              <span class="dmg-legend-item"><span class="dmg-dot phys"></span><span id="bluePct">50%</span> Physical</span>
+              <span class="dmg-legend-item"><span class="dmg-dot magic"></span><span id="blueMagicPct">50%</span> Magic</span>
+            </div>
+          </div>
+          <div class="score-breakdown" id="blueBreakdown"></div>
+          <div class="sw-section" id="blueSW"></div>
+        </div>
+        <div class="verdict-col">
+          <div class="verdict-box">
+            <div class="verdict-label">FAVORED</div>
+            <div class="verdict-team" id="verdictTeam">—</div>
+            <div class="verdict-delta" id="verdictDelta"></div>
+          </div>
+        </div>
+        <div class="analysis-card red-card">
+          <div class="card-top" style="flex-direction:row-reverse">
+            <div class="grade-badge" id="redGrade">—</div>
+            <div class="card-meta" style="text-align:right">
+              <div class="card-label" id="redLabel">—</div>
+              <div class="card-team-name" style="color:var(--red)">Red Side</div>
+            </div>
+          </div>
+          <div class="dmg-section">
+            <div class="dmg-label">Damage Profile</div>
+            <div class="dmg-bar">
+              <div class="dmg-phys" id="redDmgPhys" style="width:50%"></div>
+              <div class="dmg-magic" id="redDmgMagic" style="width:50%"></div>
+            </div>
+            <div class="dmg-legend">
+              <span class="dmg-legend-item"><span class="dmg-dot phys"></span><span id="redPct">50%</span> Physical</span>
+              <span class="dmg-legend-item"><span class="dmg-dot magic"></span><span id="redMagicPct">50%</span> Magic</span>
+            </div>
+          </div>
+          <div class="score-breakdown" id="redBreakdown"></div>
+          <div class="sw-section" id="redSW"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Side Panel -->
+  <div class="side-panel">
+    <div class="side-section">
+      <div class="side-title">Riot API Key</div>
+      <div class="key-input-wrap">
+        <input type="password" class="key-input" id="apiKeyInput" placeholder="RGAPI-xxxxxxxx-..." />
+        <div class="key-note">Development keys expire every 24h.<br>Enter your key to enable live data.</div>
+        <button class="key-btn" onclick="connectAPI()">Connect</button>
+      </div>
+    </div>
+    <div class="side-title" style="padding: 16px 20px 0; margin-bottom: 0;">Draft Log</div>
+    <div class="draft-log" id="draftLog">
+      <div class="log-entry system">
+        <div class="log-dot"></div>
+        <span>Waiting for API connection...</span>
+      </div>
+    </div>
+    <button class="reset-btn" onclick="resetDraft()">↺ Reset Draft</button>
+  </div>
+
+</div>
+
+<!-- ── FOOTER: Algorithm Explainer ── -->
+<footer class="app-footer">
+  <div class="footer-toggle" onclick="toggleFooter()">
+    <div class="footer-toggle-left">
+      <span class="footer-toggle-label">How the Algorithm Works</span>
+      <span class="footer-toggle-tag">v1.0</span>
+    </div>
+    <span class="footer-toggle-icon" id="footerIcon">▼</span>
+  </div>
+  <div class="footer-body" id="footerBody">
+    <div class="footer-body-inner">
+      <div class="footer-content">
+
+        <!-- Section 1: Overview -->
+        <div class="algo-section">
+          <div class="algo-section-title" style="--accent: var(--blue)">
+            Scoring Formula
+            <span class="algo-weight">3 components</span>
+          </div>
+          <div class="algo-body">
+            Each team receives a <strong>score from 0–100</strong> based on three weighted components. The final score maps to a letter grade, and the higher-scoring team is marked as favored.
+          </div>
+          <div class="algo-formula">
+            Score =<br>
+            &nbsp;&nbsp;Coherence &nbsp;× 0.50<br>
+            + Threat &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;× 0.35<br>
+            + Dmg Balance × 0.15
+          </div>
+          <div class="algo-body" style="margin-top:4px;">
+            The verdict edge label — <strong>EVEN</strong>, <strong>SLIGHT EDGE</strong>, or <strong>CLEAR EDGE</strong> — reflects the raw score gap between the two teams (&lt;5, &lt;15, or 15+).
+          </div>
+        </div>
+
+        <!-- Section 2: Components -->
+        <div class="algo-section">
+          <div class="algo-section-title" style="--accent: var(--gold)">
+            Component Breakdown
+            <span class="algo-weight">weights</span>
+          </div>
+          <div class="algo-body">
+            <strong>Coherence (50%)</strong> — measures how cleanly your five picks align to a single playstyle. Each champion carries one or more archetype tags. The most common tag across the team determines the label; the proportion of champions contributing to it drives this score. A pure Dive comp scores higher than a scattered one.
+          </div>
+          <div class="algo-body" style="margin-top:8px;">
+            <strong>Threat (35%)</strong> — the average individual threat rating of your five champions, normalized to 0–100. Ratings range from 6 (low-threat utility picks) to 9 (high-carry assassins and hyperscalers).
+          </div>
+          <div class="algo-body" style="margin-top:8px;">
+            <strong>Damage Balance (15%)</strong> — a flat bonus awarded when your composition has at least 25% of both physical and magic damage. Itemizing against a one-type team is far easier for opponents.
+          </div>
+        </div>
+
+        <!-- Section 3: Grades + Archetypes -->
+        <div class="algo-section">
+          <div class="algo-section-title" style="--accent: var(--green)">
+            Grades &amp; Archetypes
+          </div>
+          <div class="grade-scale">
+            <div class="grade-scale-row">
+              <span class="grade-scale-letter grade-S">S</span>
+              <div class="grade-scale-bar"><div class="grade-scale-fill" style="width:100%;background:var(--gold)"></div></div>
+              <span class="grade-scale-range">88 – 100</span>
+            </div>
+            <div class="grade-scale-row">
+              <span class="grade-scale-letter grade-A">A</span>
+              <div class="grade-scale-bar"><div class="grade-scale-fill" style="width:79%;background:var(--blue)"></div></div>
+              <span class="grade-scale-range">74 – 87</span>
+            </div>
+            <div class="grade-scale-row">
+              <span class="grade-scale-letter grade-B">B</span>
+              <div class="grade-scale-bar"><div class="grade-scale-fill" style="width:62%;background:#9090a8"></div></div>
+              <span class="grade-scale-range">58 – 73</span>
+            </div>
+            <div class="grade-scale-row">
+              <span class="grade-scale-letter grade-C">C</span>
+              <div class="grade-scale-bar"><div class="grade-scale-fill" style="width:45%;background:#ff8c69"></div></div>
+              <span class="grade-scale-range">42 – 57</span>
+            </div>
+            <div class="grade-scale-row">
+              <span class="grade-scale-letter grade-D">D</span>
+              <div class="grade-scale-bar"><div class="grade-scale-fill" style="width:25%;background:#ff3a3a"></div></div>
+              <span class="grade-scale-range">0 – 41</span>
+            </div>
+          </div>
+          <div class="archetype-tags">
+            <span class="arch-tag">Dive</span>
+            <span class="arch-tag">Poke</span>
+            <span class="arch-tag">Split</span>
+            <span class="arch-tag">Teamfight</span>
+            <span class="arch-tag">Peel</span>
+            <span class="arch-tag">Pick</span>
+          </div>
+          <div class="algo-body" style="margin-top:8px;">
+            Champions can carry multiple archetype tags. A comp's label is the plurality winner — the archetype with the most contributors. Ties resolve to the first alphabetically.
+          </div>
+        </div>
+
+        <div class="footer-divider"></div>
+
+        <div class="footer-note">
+          Champion data is sourced from Riot's Data Dragon CDN. Archetype tags, threat ratings, and damage classifications are manually curated and updated over time. Champions not present in the database default to neutral values (threat 6, 50/50 damage, no archetype contribution) and do not break scoring — they simply contribute less signal. Data Dragon version is fetched live on each API connection.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── FOOTER TOGGLE ──
+  function toggleFooter() {
+    const body = document.getElementById('footerBody');
+    const icon = document.getElementById('footerIcon');
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    icon.classList.toggle('open', !isOpen);
+  }
+
+  // ── ROLES ──
+  const ROLES = [
+    { key: 'top',     label: 'TOP', src: 'icons/top.png' },
+    { key: 'jungle',  label: 'JGL', src: 'icons/jungle.png' },
+    { key: 'mid',     label: 'MID', src: 'icons/mid.png' },
+    { key: 'bot',     label: 'BOT', src: 'icons/bottom.png' },
+    { key: 'support', label: 'SUP', src: 'icons/support.png' },
+  ];
+
+  function roleIconHTML(idx) {
+    const role = ROLES[idx];
+    if (role.src) return `<div class="slot-role-icon"><img src="${role.src}" alt="${role.label}" title="${role.label}" /></div>`;
+    return `<div class="slot-role-icon"><div class="role-placeholder">${role.label}</div></div>`;
+  }
+
+  // ── STATE ──
+  const state = {
+    apiKey: '', version: '',
+    champions: {}, championList: [],
+    blue: [null,null,null,null,null],
+    red:  [null,null,null,null,null],
+    activeSlot: { idx: 0, team: 'blue' },
+    acHighlight: -1,
+  };
+
+  const PICK_ORDER = [
+    {team:'blue',idx:0},{team:'red',idx:0},
+    {team:'blue',idx:1},{team:'red',idx:1},
+    {team:'blue',idx:2},{team:'red',idx:2},
+    {team:'blue',idx:3},{team:'red',idx:3},
+    {team:'blue',idx:4},{team:'red',idx:4},
+  ];
+  let pickStep = 0;
+
+  // ── API CONNECTION ──
+  async function connectAPI() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    if (!key) { showToast('Enter an API key first'); return; }
+    state.apiKey = key;
+    setStatus('connecting', 'CONNECTING...');
+    addLog('system', 'Attempting API connection...');
+    try {
+      const verRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+      if (!verRes.ok) throw new Error('Could not reach Data Dragon');
+      const versions = await verRes.json();
+      state.version = versions[0];
+      addLog('success', `Data Dragon v${state.version} loaded`);
+
+      const champRes = await fetch(`https://ddragon.leagueoflegends.com/cdn/${state.version}/data/en_US/champion.json`);
+      if (!champRes.ok) throw new Error('Failed to load champion data');
+      const champData = await champRes.json();
+      state.champions = champData.data;
+      state.championList = Object.values(champData.data)
+        .map(c => ({ id: c.id, name: c.name, title: c.title, key: c.key, tags: c.tags }))
+        .sort((a,b) => a.name.localeCompare(b.name));
+      addLog('success', `${state.championList.length} champions loaded`);
+
+      const testRes = await fetch(`https://euw1.api.riotgames.com/lol/status/v4/platform-data`, { headers: { 'X-Riot-Token': state.apiKey } });
+      if (testRes.status === 403 || testRes.status === 401) throw new Error('Invalid or expired API key');
+      if (!testRes.ok && testRes.status !== 200) {
+        addLog('warn', `API responded with ${testRes.status} — key accepted`);
+      } else {
+        const platformData = await testRes.json();
+        addLog('success', `Connected to ${platformData.name || 'Riot API'}`);
+      }
+      setStatus('connected', 'CONNECTED');
+      addLog('success', 'Ready. Begin your draft.');
+      activateSlot(0, 'blue');
+    } catch(err) {
+      setStatus('error', 'ERROR');
+      addLog('system', `Error: ${err.message}`);
+      showToast(err.message);
+      state.apiKey = '';
+    }
+  }
+
+  // ── SLOT ACTIVATION ──
+  function activateSlot(idx, team) {
+    document.querySelectorAll('.slot.active').forEach(s => s.classList.remove('active'));
+    state.activeSlot = { idx, team };
+    const slot = document.getElementById(`${team}-${idx}`);
+    slot.classList.add('active');
+    if (team === 'red') slot.classList.add('red-side');
+    const input = document.getElementById('champInput');
+    const btn = document.getElementById('confirmBtn');
+    const prompt = document.getElementById('inputPrompt');
+    const pickNum = team === 'blue' ? state.blue.filter(Boolean).length + 1 : state.red.filter(Boolean).length + 1;
+    prompt.textContent = `SELECT ${team.toUpperCase()} SIDE — PICK ${pickNum} OF 5`;
+    prompt.className = 'input-prompt' + (team === 'red' ? ' red' : '');
+    input.className = 'champion-input' + (team === 'red' ? ' red-focus' : '');
+    btn.className = 'confirm-btn' + (team === 'red' ? ' red' : '');
+    input.value = '';
+    input.focus();
+    hideAutocomplete();
+  }
+
+  // ── AUTOCOMPLETE ──
+  function handleInputChange(val) {
+    if (!val || val.length < 1 || !state.championList.length) { hideAutocomplete(); return; }
+    const q = val.toLowerCase();
+    const matches = state.championList
+      .filter(c => c.name.toLowerCase().startsWith(q) || c.id.toLowerCase().startsWith(q))
+      .slice(0, 8);
+    if (!matches.length) { hideAutocomplete(); return; }
+    const ac = document.getElementById('autocomplete');
+    ac._matches = matches;
+    renderACList(matches);
+  }
+
+  function renderACList(matches) {
+    const ac = document.getElementById('autocomplete');
+    ac.innerHTML = matches.map((c, i) => `
+      <div class="autocomplete-item ${i === state.acHighlight ? 'highlighted' : ''}"
+           data-champ-id="${c.id}"
+           onmousedown="event.preventDefault(); selectChamp('${c.id}')"
+           onmouseenter="setACHighlight(${i})">
+        <img src="https://ddragon.leagueoflegends.com/cdn/${state.version}/img/champion/${c.id}.png" onerror="this.style.display='none'" />
+        <span class="ac-name">${c.name}</span>
+        <span class="ac-title">${c.tags ? c.tags.join(' · ') : ''}</span>
+      </div>`).join('');
+    ac.style.display = 'block';
+  }
+
+  function setACHighlight(i) {
+    state.acHighlight = i;
+    const ac = document.getElementById('autocomplete');
+    if (!ac._matches) return;
+    ac.querySelectorAll('.autocomplete-item').forEach((el, idx) => el.classList.toggle('highlighted', idx === i));
+  }
+
+  function renderAC(val) { handleInputChange(val); }
+
+  function hideAutocomplete() {
+    const ac = document.getElementById('autocomplete');
+    ac.style.display = 'none'; ac._matches = []; state.acHighlight = -1;
+  }
+
+  function handleInputKey(e) {
+    const ac = document.getElementById('autocomplete');
+    const matches = ac._matches || [];
+    if (e.key === 'ArrowDown') { e.preventDefault(); state.acHighlight = Math.min(state.acHighlight + 1, matches.length - 1); renderACList(matches); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); state.acHighlight = Math.max(state.acHighlight - 1, -1); renderACList(matches); }
+    else if (e.key === 'Enter') {
+      if (state.acHighlight >= 0 && matches[state.acHighlight]) selectChamp(matches[state.acHighlight].id);
+      else if (matches.length === 1) selectChamp(matches[0].id);
+      else confirmPick();
+    } else if (e.key === 'Escape') hideAutocomplete();
+  }
+
+  function selectChamp(champId) {
+    const champ = state.champions[champId];
+    if (!champ) return;
+    document.getElementById('champInput').value = champ.name;
+    hideAutocomplete();
+    confirmPick();
+  }
+
+  // ── CONFIRM PICK ──
+  function confirmPick() {
+    const val = document.getElementById('champInput').value.trim();
+    if (!val) return;
+    const q = val.toLowerCase();
+    const match = state.championList.find(c => c.name.toLowerCase() === q || c.id.toLowerCase() === q)
+               || state.championList.find(c => c.name.toLowerCase().startsWith(q));
+    if (!match) { showToast(`Champion "${val}" not found`); return; }
+    const allPicked = [...state.blue, ...state.red].filter(Boolean).map(c => c.id);
+    if (allPicked.includes(match.id)) { showToast(`${match.name} is already in the draft`); return; }
+    placeChampion(match, state.activeSlot.idx, state.activeSlot.team);
+  }
+
+  function placeChampion(champ, idx, team) {
+    if (team === 'blue') state.blue[idx] = champ;
+    else state.red[idx] = champ;
+    renderSlot(champ, idx, team);
+    addLog(team, `${team === 'blue' ? 'Blue' : 'Red'} picks ${champ.name}`);
+    document.getElementById('champInput').value = '';
+    hideAutocomplete();
+    advancePick();
+  }
+
+  function renderSlot(champ, idx, team) {
+    const slot = document.getElementById(`${team}-${idx}`);
+    slot.classList.remove('active', 'red-side');
+    slot.classList.add('filled');
+    const iconUrl = `https://ddragon.leagueoflegends.com/cdn/${state.version}/img/champion/${champ.id}.png`;
+    slot.innerHTML = `
+      <span class="slot-num">${idx + 1}</span>
+      ${roleIconHTML(idx)}
+      <div class="slot-icon">
+        <img src="${iconUrl}" alt="${champ.name}" onerror="this.parentElement.innerHTML='<span class=icon-placeholder>${champ.name[0]}</span>'" />
+      </div>
+      <div class="slot-info">
+        <div class="slot-name">${champ.name}</div>
+        <div class="slot-role">${champ.tags ? champ.tags.join(' / ') : ''}</div>
+      </div>
+      <button class="slot-remove" onclick="removeChamp(event,${idx},'${team}')">✕</button>`;
+  }
+
+  function removeChamp(e, idx, team) {
+    e.stopPropagation();
+    const arr = team === 'blue' ? state.blue : state.red;
+    if (!arr[idx]) return;
+    const name = arr[idx].name;
+    arr[idx] = null;
+    const slot = document.getElementById(`${team}-${idx}`);
+    slot.classList.remove('filled');
+    slot.innerHTML = `
+      <span class="slot-num">${idx + 1}</span>
+      ${roleIconHTML(idx)}
+      <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+      <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+      <button class="slot-remove" onclick="removeChamp(event,${idx},'${team}')">✕</button>`;
+
+    // Re-enable input in case draft was already marked complete
+    document.getElementById('champInput').disabled = false;
+    document.getElementById('confirmBtn').disabled = false;
+    document.getElementById('analysisPanel').style.display = 'none';
+
+    addLog('system', `Removed ${name} from ${team} side`);
+    activateSlot(idx, team);
+    updatePhase();
+  }
+
+  // ── PICK ORDER ──
+  function advancePick() {
+    updatePhase();
+    for (let i = 0; i < PICK_ORDER.length; i++) {
+      const { team, idx } = PICK_ORDER[i];
+      const arr = team === 'blue' ? state.blue : state.red;
+      if (!arr[idx]) { activateSlot(idx, team); return; }
+    }
+    draftComplete();
+  }
+
+  function updatePhase() {
+    const filled = [...state.blue, ...state.red].filter(Boolean).length;
+    const phase = document.getElementById('draftPhase');
+    if (filled === 0) phase.textContent = '— AWAITING PICKS —';
+    else if (filled < 10) phase.textContent = `PICK ${filled} / 10`;
+    else phase.textContent = '— DRAFT COMPLETE —';
+  }
+
+  // ── CHAMPION DATA ──
+  const CHAMP_DATA = {
+    Malphite:    { archetypes: ['Teamfight','Dive'],      dmg: 'magic',    threat: 7 },
+    Amumu:       { archetypes: ['Teamfight','Dive'],      dmg: 'magic',    threat: 7 },
+    Leona:       { archetypes: ['Dive','Peel'],           dmg: 'magic',    threat: 7 },
+    Nautilus:    { archetypes: ['Dive','Peel'],           dmg: 'magic',    threat: 7 },
+    Zac:         { archetypes: ['Dive','Teamfight'],      dmg: 'magic',    threat: 7 },
+    Jarvan:      { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 7 },
+    Sejuani:     { archetypes: ['Teamfight','Peel'],      dmg: 'magic',    threat: 6 },
+    Maokai:      { archetypes: ['Peel','Teamfight'],      dmg: 'magic',    threat: 6 },
+    Alistar:     { archetypes: ['Dive','Peel'],           dmg: 'magic',    threat: 7 },
+    Thresh:      { archetypes: ['Peel','Pick'],           dmg: 'magic',    threat: 8 },
+    Blitzcrank:  { archetypes: ['Pick','Dive'],           dmg: 'magic',    threat: 7 },
+    Poppy:       { archetypes: ['Peel','Dive'],           dmg: 'physical', threat: 7 },
+    Ornn:        { archetypes: ['Teamfight','Peel'],      dmg: 'magic',    threat: 8 },
+    Galio:       { archetypes: ['Teamfight','Dive'],      dmg: 'magic',    threat: 7 },
+    Rell:        { archetypes: ['Dive','Teamfight'],      dmg: 'magic',    threat: 7 },
+    Jayce:       { archetypes: ['Poke','Split'],          dmg: 'physical', threat: 8 },
+    Zoe:         { archetypes: ['Poke','Pick'],           dmg: 'magic',    threat: 8 },
+    Ezreal:      { archetypes: ['Poke'],                  dmg: 'physical', threat: 7 },
+    Karma:       { archetypes: ['Poke','Peel'],           dmg: 'magic',    threat: 7 },
+    Nidalee:     { archetypes: ['Poke','Pick'],           dmg: 'magic',    threat: 7 },
+    Varus:       { archetypes: ['Poke','Pick'],           dmg: 'physical', threat: 7 },
+    Lux:         { archetypes: ['Poke','Pick'],           dmg: 'magic',    threat: 7 },
+    Xerath:      { archetypes: ['Poke'],                  dmg: 'magic',    threat: 7 },
+    Ziggs:       { archetypes: ['Poke'],                  dmg: 'magic',    threat: 6 },
+    Corki:       { archetypes: ['Poke'],                  dmg: 'physical', threat: 7 },
+    Heimerdinger:{ archetypes: ['Poke'],                  dmg: 'magic',    threat: 6 },
+    Hwei:        { archetypes: ['Poke','Teamfight'],      dmg: 'magic',    threat: 7 },
+    Fiora:       { archetypes: ['Split'],                 dmg: 'physical', threat: 9 },
+    Jax:         { archetypes: ['Split','Dive'],          dmg: 'mixed',    threat: 8 },
+    Tryndamere:  { archetypes: ['Split'],                 dmg: 'physical', threat: 8 },
+    Nasus:       { archetypes: ['Split'],                 dmg: 'physical', threat: 7 },
+    Yorick:      { archetypes: ['Split'],                 dmg: 'physical', threat: 7 },
+    Camille:     { archetypes: ['Split','Pick'],          dmg: 'physical', threat: 9 },
+    Trundle:     { archetypes: ['Split','Peel'],          dmg: 'physical', threat: 7 },
+    Garen:       { archetypes: ['Split'],                 dmg: 'physical', threat: 6 },
+    Illaoi:      { archetypes: ['Split','Teamfight'],     dmg: 'physical', threat: 7 },
+    Zed:         { archetypes: ['Pick'],                  dmg: 'physical', threat: 9 },
+    Talon:       { archetypes: ['Pick'],                  dmg: 'physical', threat: 8 },
+    Katarina:    { archetypes: ['Pick','Teamfight'],      dmg: 'magic',    threat: 8 },
+    Akali:       { archetypes: ['Pick'],                  dmg: 'magic',    threat: 9 },
+    Fizz:        { archetypes: ['Pick','Dive'],           dmg: 'magic',    threat: 8 },
+    Leblanc:     { archetypes: ['Pick'],                  dmg: 'magic',    threat: 9 },
+    Ahri:        { archetypes: ['Pick'],                  dmg: 'magic',    threat: 8 },
+    Elise:       { archetypes: ['Pick','Dive'],           dmg: 'magic',    threat: 8 },
+    Khazix:      { archetypes: ['Pick'],                  dmg: 'physical', threat: 9 },
+    Rengar:      { archetypes: ['Pick'],                  dmg: 'physical', threat: 9 },
+    Qiyana:      { archetypes: ['Pick'],                  dmg: 'physical', threat: 8 },
+    Pyke:        { archetypes: ['Pick'],                  dmg: 'physical', threat: 8 },
+    Shaco:       { archetypes: ['Pick'],                  dmg: 'physical', threat: 7 },
+    Orianna:     { archetypes: ['Teamfight','Poke'],      dmg: 'magic',    threat: 9 },
+    Syndra:      { archetypes: ['Teamfight','Pick'],      dmg: 'magic',    threat: 8 },
+    Viktor:      { archetypes: ['Teamfight','Poke'],      dmg: 'magic',    threat: 8 },
+    Cassiopeia:  { archetypes: ['Teamfight','Poke'],      dmg: 'magic',    threat: 8 },
+    Sivir:       { archetypes: ['Teamfight'],             dmg: 'physical', threat: 7 },
+    MissFortune: { archetypes: ['Teamfight','Poke'],      dmg: 'physical', threat: 8 },
+    Jinx:        { archetypes: ['Teamfight'],             dmg: 'physical', threat: 8 },
+    Kennen:      { archetypes: ['Teamfight','Dive'],      dmg: 'magic',    threat: 8 },
+    Rumble:      { archetypes: ['Teamfight','Poke'],      dmg: 'magic',    threat: 8 },
+    Sona:        { archetypes: ['Teamfight','Peel'],      dmg: 'magic',    threat: 7 },
+    Lissandra:   { archetypes: ['Teamfight','Pick'],      dmg: 'magic',    threat: 8 },
+    Brand:       { archetypes: ['Teamfight'],             dmg: 'magic',    threat: 8 },
+    Janna:       { archetypes: ['Peel'],                  dmg: 'magic',    threat: 6 },
+    Lulu:        { archetypes: ['Peel'],                  dmg: 'magic',    threat: 7 },
+    Soraka:      { archetypes: ['Peel'],                  dmg: 'magic',    threat: 6 },
+    Nami:        { archetypes: ['Peel','Poke'],           dmg: 'magic',    threat: 7 },
+    Zilean:      { archetypes: ['Peel'],                  dmg: 'magic',    threat: 7 },
+    Renata:      { archetypes: ['Peel','Teamfight'],      dmg: 'mixed',    threat: 7 },
+    Braum:       { archetypes: ['Peel'],                  dmg: 'magic',    threat: 7 },
+    Taric:       { archetypes: ['Peel','Teamfight'],      dmg: 'magic',    threat: 7 },
+    Darius:      { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 8 },
+    Irelia:      { archetypes: ['Dive','Split'],          dmg: 'physical', threat: 9 },
+    Renekton:    { archetypes: ['Dive'],                  dmg: 'physical', threat: 8 },
+    Hecarim:     { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 8 },
+    Vi:          { archetypes: ['Dive','Pick'],           dmg: 'physical', threat: 8 },
+    Diana:       { archetypes: ['Dive','Teamfight'],      dmg: 'magic',    threat: 8 },
+    Pantheon:    { archetypes: ['Dive','Pick'],           dmg: 'physical', threat: 8 },
+    Wukong:      { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 8 },
+    Aatrox:      { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 9 },
+    Sylas:       { archetypes: ['Dive','Teamfight'],      dmg: 'magic',    threat: 8 },
+    Ambessa:     { archetypes: ['Dive','Teamfight'],      dmg: 'physical', threat: 8 },
+  };
+
+  const GRADE_THRESHOLDS = [
+    { min: 88, grade: 'S' },
+    { min: 74, grade: 'A' },
+    { min: 58, grade: 'B' },
+    { min: 42, grade: 'C' },
+    { min: 0,  grade: 'D' },
+  ];
+
+  function getChampData(champ) {
+    if (!champ) return null;
+    return CHAMP_DATA[champ.id] || CHAMP_DATA[champ.name] || null;
+  }
+
+  function analyzeTeam(picks) {
+    const data = picks.map(getChampData);
+    const archCounts = {};
+    data.forEach(d => { if (!d) return; d.archetypes.forEach(a => { archCounts[a] = (archCounts[a] || 0) + 1; }); });
+    const sorted = Object.entries(archCounts).sort((a,b) => b[1]-a[1]);
+    const topArch = sorted[0] ? sorted[0][0] : 'Teamfight';
+    const topCount = sorted[0] ? sorted[0][1] : 0;
+    const coherence = (topCount / 5) * 100;
+
+    let phys = 0, magic = 0;
+    data.forEach(d => {
+      if (!d) { phys += 1; magic += 1; return; }
+      if (d.dmg === 'physical') phys += 2;
+      else if (d.dmg === 'magic') magic += 2;
+      else { phys += 1; magic += 1; }
+    });
+    const total = phys + magic;
+    const physPct = Math.round((phys / total) * 100);
+    const magicPct = 100 - physPct;
+    const balanceBonus = Math.min(physPct, magicPct) >= 25 ? 10 : 0;
+
+    const knownData = data.filter(Boolean);
+    const avgThreat = knownData.length ? knownData.reduce((s, d) => s + d.threat, 0) / knownData.length : 6;
+    const threatScore = ((avgThreat - 1) / 9) * 100;
+
+    const raw = (coherence * 0.50) + (threatScore * 0.35) + (balanceBonus * 0.15 * 10);
+    const score = Math.min(100, Math.max(0, raw));
+    const grade = GRADE_THRESHOLDS.find(t => score >= t.min)?.grade || 'D';
+
+    // ── Strengths & Weaknesses ──
+    const ARCHETYPE_SW = {
+      Teamfight: {
+        strengths: ['Dominant in even 5v5 skirmishes', 'Scales well into late-game fights'],
+        weaknesses: ['Vulnerable to split push pressure', 'Struggles against sustained poke'],
+      },
+      Dive: {
+        strengths: ['High kill threat on priority targets', 'Forces reactive, defensive play'],
+        weaknesses: ['Falls off significantly if behind', 'Weak into disengage or peel comps'],
+      },
+      Poke: {
+        strengths: ['Controls lane and siege phases', 'Low-risk, high-pressure trading pattern'],
+        weaknesses: ['Collapses if enemies close the gap', 'Relies entirely on maintaining range'],
+      },
+      Split: {
+        strengths: ['Creates persistent side-lane pressure', 'Forces enemies to fracture their response'],
+        weaknesses: ['Team can be 4v5\'d at objectives', 'Requires strong map awareness and timing'],
+      },
+      Pick: {
+        strengths: ['Can snowball off eliminating key targets', 'Punishes isolated or overextended enemies'],
+        weaknesses: ['Ineffective if targets play safe', 'Weak in open, sustained teamfights'],
+      },
+      Peel: {
+        strengths: ['Protects win conditions extremely well', 'Hard to burst priority carries'],
+        weaknesses: ['Passive — depends entirely on carry performance', 'Low kill pressure in proactive fights'],
+      },
+    };
+
+    const sw = ARCHETYPE_SW[topArch] || {
+      strengths: ['Flexible draft with multiple win conditions'],
+      weaknesses: ['Unclear primary identity may hurt execution'],
+    };
+
+    return {
+      label: topArch, grade, score, physPct, magicPct,
+      strengths: sw.strengths,
+      weaknesses: sw.weaknesses,
+      breakdown: [
+        { label: 'Coherence',   val: Math.round(coherence),  max: 100 },
+        { label: 'Threat',      val: Math.round(threatScore), max: 100 },
+        { label: 'Dmg Balance', val: balanceBonus ? 10 : 0,  max: 10  },
+      ]
+    };
+  }
+
+  function renderSW(elId, strengths, weaknesses) {
+    const el = document.getElementById(elId);
+    const strHTML = strengths.map(s =>
+      `<div class="sw-item"><span class="sw-icon str">▲</span><span>${s}</span></div>`
+    ).join('');
+    const wkHTML = weaknesses.map(w =>
+      `<div class="sw-item"><span class="sw-icon wk">▼</span><span>${w}</span></div>`
+    ).join('');
+    el.innerHTML = `
+      <div class="sw-label">Strengths</div>
+      <div class="sw-list">${strHTML}</div>
+      <div class="sw-label" style="margin-top:8px">Weaknesses</div>
+      <div class="sw-list">${wkHTML}</div>
+    `;
+  }
+
+  function renderBreakdown(elId, breakdown, teamColor) {
+    const el = document.getElementById(elId);
+    el.innerHTML = breakdown.map(row => {
+      const pct = Math.round((row.val / row.max) * 100);
+      return `<div class="breakdown-row">
+        <span class="breakdown-row-label">${row.label}</span>
+        <div class="breakdown-bar-wrap"><div class="breakdown-bar-fill" style="width:${pct}%;background:${teamColor};opacity:0.5;"></div></div>
+        <span class="breakdown-val">${row.val}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function draftComplete() {
+    document.querySelectorAll('.slot.active').forEach(s => s.classList.remove('active'));
+    const prompt = document.getElementById('inputPrompt');
+    prompt.textContent = 'DRAFT COMPLETE — ANALYSIS READY';
+    prompt.className = 'input-prompt done';
+    document.getElementById('champInput').disabled = true;
+    document.getElementById('confirmBtn').disabled = true;
+
+    const blueResult = analyzeTeam(state.blue);
+    const redResult  = analyzeTeam(state.red);
+
+    const blueGradeEl = document.getElementById('blueGrade');
+    blueGradeEl.textContent = blueResult.grade;
+    blueGradeEl.className = `grade-badge grade-${blueResult.grade}`;
+    document.getElementById('blueLabel').textContent = blueResult.label.toUpperCase();
+    document.getElementById('blueDmgPhys').style.width = blueResult.physPct + '%';
+    document.getElementById('blueDmgMagic').style.width = blueResult.magicPct + '%';
+    document.getElementById('bluePct').textContent = blueResult.physPct + '%';
+    document.getElementById('blueMagicPct').textContent = blueResult.magicPct + '%';
+    renderBreakdown('blueBreakdown', blueResult.breakdown, 'var(--blue)');
+    renderSW('blueSW', blueResult.strengths, blueResult.weaknesses);
+
+    const redGradeEl = document.getElementById('redGrade');
+    redGradeEl.textContent = redResult.grade;
+    redGradeEl.className = `grade-badge grade-${redResult.grade}`;
+    document.getElementById('redLabel').textContent = redResult.label.toUpperCase();
+    document.getElementById('redDmgPhys').style.width = redResult.physPct + '%';
+    document.getElementById('redDmgMagic').style.width = redResult.magicPct + '%';
+    document.getElementById('redPct').textContent = redResult.physPct + '%';
+    document.getElementById('redMagicPct').textContent = redResult.magicPct + '%';
+    renderBreakdown('redBreakdown', redResult.breakdown, 'var(--red)');
+    renderSW('redSW', redResult.strengths, redResult.weaknesses);
+
+    const delta = Math.abs(blueResult.score - redResult.score);
+    const favored = blueResult.score >= redResult.score ? 'blue' : 'red';
+    const verdictTeamEl = document.getElementById('verdictTeam');
+    verdictTeamEl.textContent = favored === 'blue' ? 'BLUE' : 'RED';
+    verdictTeamEl.style.color = favored === 'blue' ? 'var(--blue)' : 'var(--red)';
+    document.getElementById('verdictDelta').textContent = delta < 5 ? 'EVEN' : delta < 15 ? 'SLIGHT EDGE' : 'CLEAR EDGE';
+
+    document.getElementById('analysisPanel').style.display = 'block';
+    addLog('success', `Blue: ${blueResult.label} [${blueResult.grade}] — Red: ${redResult.label} [${redResult.grade}]`);
+    addLog('success', `Favored: ${favored === 'blue' ? 'Blue Side' : 'Red Side'}`);
+  }
+
+  // ── RESET ──
+  function resetDraft() {
+    state.blue = [null,null,null,null,null];
+    state.red  = [null,null,null,null,null];
+    pickStep = 0;
+    ['blue','red'].forEach(team => {
+      for (let i = 0; i < 5; i++) {
+        const slot = document.getElementById(`${team}-${i}`);
+        slot.className = 'slot';
+        slot.innerHTML = `
+          <span class="slot-num">${i+1}</span>
+          ${roleIconHTML(i)}
+          <div class="slot-icon"><span class="icon-placeholder">?</span></div>
+          <div class="slot-info"><div class="slot-name empty">— empty —</div></div>
+          ${team==='red' ? `<button class="slot-remove" onclick="removeChamp(event,${i},'red')">✕</button>` : ''}`;
+      }
+    });
+    document.getElementById('champInput').disabled = false;
+    document.getElementById('confirmBtn').disabled = false;
+    document.getElementById('draftPhase').textContent = '— AWAITING PICKS —';
+    document.getElementById('analysisPanel').style.display = 'none';
+    addLog('system', 'Draft reset.');
+    if (state.championList.length) activateSlot(0, 'blue');
+    else document.getElementById('inputPrompt').textContent = 'SELECT BLUE SIDE — PICK 1 OF 5';
+  }
+
+  // ── HELPERS ──
+  function setStatus(s, label) {
+    const dot = document.getElementById('statusDot');
+    const lbl = document.getElementById('statusLabel');
+    dot.className = 'status-dot ' + (s === 'connected' ? 'connected' : s === 'error' ? 'error' : '');
+    lbl.className = 'status-label ' + (s === 'connected' ? 'connected' : s === 'error' ? 'error' : '');
+    lbl.textContent = label;
+  }
+
+  function addLog(type, msg) {
+    const log = document.getElementById('draftLog');
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    entry.innerHTML = `<div class="log-dot"></div><span>[${time}] ${msg}</span>`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ── INFO FOOTER ──
+  function toggleInfo() {
+    const body = document.getElementById('infoBody');
+    const icon = document.getElementById('infoIcon');
+    const isOpen = body.classList.toggle('open');
+    icon.classList.toggle('open', isOpen);
+  }
+
+  document.addEventListener('click', e => { if (!e.target.closest('.champion-input-wrap')) hideAutocomplete(); });
+  document.querySelectorAll('.slot').forEach(s => s.addEventListener('click', () => {}));
+</script>
+</body>
+</html>
