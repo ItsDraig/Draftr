@@ -1,0 +1,17 @@
+{
+  "name": "draftr-backend",
+  "version": "1.0.0",
+  "description": "draftr.gg API server",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "draftr": "file:..",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2"
+  }
+}

@@ -1,0 +1,62 @@
+:root {
+  --bg:        #080810;
+  --surface:   #0e0e1a;
+  --surface2:  #13131f;
+  --border:    #1e1e30;
+  --border2:   #2a2a40;
+  --text:      #dcdcf0;
+  --muted:     #5a5a7a;
+  --dim:       #3a3a55;
+  --blue:      #4a9eff;
+  --blue-dim:  rgba(74,158,255,0.08);
+  --blue-glow: rgba(74,158,255,0.25);
+  --red:       #ff4a6b;
+  --red-dim:   rgba(255,74,107,0.08);
+  --red-glow:  rgba(255,74,107,0.25);
+  --gold:      #f0c040;
+  --gold-dim:  rgba(240,192,64,0.1);
+  --green:     #40c080;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 300;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scanline overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Animations */
+@keyframes logIn    { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
+@keyframes slotFill { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
