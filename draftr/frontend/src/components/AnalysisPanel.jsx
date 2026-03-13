@@ -4,20 +4,20 @@ function GradeBadge({ grade }) {
   return <div className={`grade-badge grade-${grade}`}>{grade}</div>;
 }
 
-function DamageBar({ physPct, magicPct }) {
+function DamageBar({ phys_pct, magic_pct }) {
   return (
     <div className="dmg-section">
       <div className="dmg-label">Damage Profile</div>
       <div className="dmg-bar">
-        <div className="dmg-phys"  style={{ width: physPct  + '%' }} />
-        <div className="dmg-magic" style={{ width: magicPct + '%' }} />
+        <div className="dmg-phys"  style={{ width: phys_pct  + '%' }} />
+        <div className="dmg-magic" style={{ width: magic_pct + '%' }} />
       </div>
       <div className="dmg-legend">
         <span className="dmg-legend-item">
-          <span className="dmg-dot phys" />{physPct}% Physical
+          <span className="dmg-dot phys" />{phys_pct}% Physical
         </span>
         <span className="dmg-legend-item">
-          <span className="dmg-dot magic" />{magicPct}% Magic
+          <span className="dmg-dot magic" />{magic_pct}% Magic
         </span>
       </div>
     </div>
@@ -84,7 +84,7 @@ function TeamCard({ result, side }) {
           </div>
         </div>
       </div>
-      <DamageBar physPct={result.physPct} magicPct={result.magicPct} />
+      <DamageBar phys_pct={result.phys_pct} magic_pct={result.magic_pct} />
       <Breakdown rows={result.breakdown} color={color} />
       <StrengthsWeaknesses strengths={result.strengths} weaknesses={result.weaknesses} />
     </div>
