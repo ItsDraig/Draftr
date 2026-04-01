@@ -20,7 +20,24 @@
   letter-spacing: 0.04em; color: var(--text);
 }
 .nav-logo span { color: var(--blue); }
-.nav-status { display: flex; align-items: center; gap: 20px; }
+.nav-wrapper { flex-shrink: 0; position: relative; z-index: 100; }
+.nav-status { display: flex; align-items: center; gap: 16px; }
+.nav-divider { width: 1px; height: 16px; background: var(--border2); }
+.nav-key-toggle { padding: 4px 12px; background: transparent; border: 1px solid var(--border2); color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; cursor: pointer; border-radius: 2px; transition: border-color 0.2s, color 0.2s, background 0.2s; }
+.nav-key-toggle:hover  { border-color: var(--blue); color: var(--blue); }
+.nav-key-toggle.active { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+.nav-key-panel { display: grid; grid-template-rows: 0fr; background: var(--surface2); border-bottom: 1px solid transparent; transition: grid-template-rows 0.3s cubic-bezier(0.4,0,0.2,1), border-color 0.3s; }
+.nav-key-panel.open { grid-template-rows: 1fr; border-color: var(--border); }
+.nav-key-panel-inner { overflow: hidden; display: flex; align-items: center; gap: 16px; padding: 0 32px; }
+.nav-key-panel.open .nav-key-panel-inner { padding: 14px 32px; }
+.nav-key-label { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.15em; white-space: nowrap; }
+.nav-key-row   { display: flex; gap: 8px; flex: 1; max-width: 520px; }
+.nav-key-input { flex: 1; background: var(--bg); border: 1px solid var(--border2); color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; padding: 7px 12px; outline: none; border-radius: 2px; transition: border-color 0.2s; letter-spacing: 0.04em; }
+.nav-key-input:focus { border-color: var(--blue); }
+.nav-key-btn  { padding: 7px 16px; background: transparent; border: 1px solid var(--blue); color: var(--blue); font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: background 0.2s, color 0.2s; white-space: nowrap; }
+.nav-key-btn:hover    { background: var(--blue); color: var(--bg); }
+.nav-key-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.nav-key-note { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--dim); letter-spacing: 0.04em; white-space: nowrap; }
 .api-status {
   display: flex; align-items: center; gap: 8px;
   font-family: 'Share Tech Mono', monospace;
@@ -39,8 +56,7 @@
 
 /* ── MAIN LAYOUT ── */
 .app {
-  display: grid;
-  grid-template-columns: 1fr 320px;
+  display: flex;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -52,6 +68,8 @@
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 28px;
   overflow-y: auto;
+  flex: 1;
+  min-width: 0;
 }
 .draft-header { display: flex; align-items: baseline; justify-content: space-between; }
 .draft-title {
@@ -135,7 +153,17 @@
 .ac-title { font-size: 0.68rem; color: var(--muted); font-weight: 300; margin-left: auto; font-family: 'Barlow', sans-serif; }
 
 /* ── SIDE PANEL ── */
-.side-panel { background: var(--surface); display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow-y: auto; }
+/* ── SIDE PANEL ── */
+.side-panel { background: var(--surface); display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow: hidden; transition: width 0.3s cubic-bezier(0.4,0,0.2,1), min-width 0.3s cubic-bezier(0.4,0,0.2,1); width: 320px; min-width: 320px; }
+.side-panel.collapsed { width: 40px; min-width: 40px; }
+.side-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 14px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); flex-shrink: 0; transition: background 0.2s; gap: 10px; }
+.side-panel-header:hover { background: var(--surface2); }
+.side-panel-toggle-icon { font-size: 0.55rem; color: var(--dim); flex-shrink: 0; transition: color 0.2s; }
+.side-panel-header:hover .side-panel-toggle-icon { color: var(--muted); }
+.side-panel.collapsed .side-panel-header { justify-content: center; padding: 16px 0; }
+.side-panel.collapsed .side-title { display: none; }
+.side-panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; opacity: 1; transition: opacity 0.2s; }
+.side-panel.collapsed .side-panel-body { opacity: 0; pointer-events: none; }
 .side-section { padding: 20px; border-bottom: 1px solid var(--border); }
 .side-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 0.62rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
 .key-input-wrap { display: flex; flex-direction: column; gap: 8px; }

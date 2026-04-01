@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { api } from '../lib/api.js';
 
 const PICK_ORDER = [
@@ -30,8 +30,9 @@ export function useDraft() {
   const [blue,         setBlue]         = useState(Array(5).fill(null));
   const [red,          setRed]          = useState(Array(5).fill(null));
   const [activeSlot,   setActiveSlot]   = useState({ team: 'blue', idx: 0 });
-  const [log,          setLog]          = useState([makeLog('system', 'Waiting for API connection...')]);
-  const [connection,   setConnection]   = useState('idle'); // idle | connecting | connected | error
+  const [log,          setLog]          = useState([makeLog('system', 'Initialising...')]);
+  const [connection,   setConnection]   = useState('idle');
+  const [riotKey,      setRiotKey]      = useState('idle');
   const [version,      setVersion]      = useState('');
   const [championList, setChampionList] = useState([]);
   const [analysis,     setAnalysis]     = useState(null);
@@ -43,18 +44,14 @@ export function useDraft() {
     setLog(prev => [...prev, makeLog(type, message)]);
   }, []);
 
-  // ── API Connection ──
-  const connect = useCallback(async (apiKey) => {
-    apiKeyRef.current = apiKey;
+  // ── Auto-connect to DDragon on mount ──────────────────────────────────────
+  const initDDragon = useCallback(async () => {
     setConnection('connecting');
-    addLog('system', 'Attempting API connection...');
     try {
-      // 1. Get DDragon version from our backend (cached)
       const { version: ver } = await api.getVersion();
       setVersion(ver);
       addLog('success', `Data Dragon v${ver} loaded`);
 
-      // 2. Load full champion list from our backend
       const { champions } = await api.getChampions();
       const list = Object.entries(champions)
         .map(([id, data]) => ({ id, ...data }))
@@ -62,7 +59,23 @@ export function useDraft() {
       setChampionList(list);
       addLog('success', `${list.length} champions loaded`);
 
-      // 3. Validate the Riot API key via a status endpoint
+      setConnection('connected');
+      addLog('success', 'Ready. Begin your draft.');
+      setActiveSlot({ team: 'blue', idx: 0 });
+    } catch (err) {
+      setConnection('error');
+      addLog('system', `Failed to load champion data: ${err.message}`);
+    }
+  }, [addLog]);
+
+  useEffect(() => { initDDragon(); }, []);
+
+  // ── Connect Riot API key (optional, for Phase 4) ──────────────────────────
+  const connectRiotKey = useCallback(async (apiKey) => {
+    apiKeyRef.current = apiKey;
+    setRiotKey('connecting');
+    addLog('system', 'Validating Riot API key...');
+    try {
       const testRes = await fetch(
         'https://euw1.api.riotgames.com/lol/status/v4/platform-data',
         { headers: { 'X-Riot-Token': apiKey } }
@@ -72,30 +85,23 @@ export function useDraft() {
       }
       if (testRes.ok) {
         const platform = await testRes.json();
-        addLog('success', `Connected to ${platform.name ?? 'Riot API'}`);
+        addLog('success', `Riot API connected — ${platform.name ?? 'EUW1'}`);
       } else {
-        addLog('warn', `Riot API responded ${testRes.status} — key accepted`);
+        addLog('warn', `Riot API responded ${testRes.status} — key saved`);
       }
-
-      setConnection('connected');
-      addLog('success', 'Ready. Begin your draft.');
-
-      // Auto-activate first slot
-      setActiveSlot({ team: 'blue', idx: 0 });
+      setRiotKey('connected');
     } catch (err) {
-      setConnection('error');
-      addLog('system', `Error: ${err.message}`);
+      setRiotKey('error');
+      addLog('system', `Riot key error: ${err.message}`);
       apiKeyRef.current = '';
     }
   }, [addLog]);
 
-  // ── Pick a champion into the active slot ──
+  // ── Pick a champion ───────────────────────────────────────────────────────
   const pickChampion = useCallback(async (champ) => {
     const { team, idx } = activeSlot;
-
-    // Duplicate check
     const taken = [...blue, ...red].filter(Boolean).map(c => c.id);
-    if (taken.includes(champ.id)) return { error: `${champ.name} is already in the draft` };
+    if (taken.includes(champ.id)) return { error: `${champ.name ?? champ.id} is already in the draft` };
 
     const updatedBlue = team === 'blue'
       ? blue.map((c, i) => i === idx ? champ : c)
@@ -106,26 +112,23 @@ export function useDraft() {
 
     setBlue(updatedBlue);
     setRed(updatedRed);
-    addLog(team, `${team === 'blue' ? 'Blue' : 'Red'} picks ${champ.name}`);
+    addLog(team, `${team === 'blue' ? 'Blue' : 'Red'} picks ${champ.name ?? champ.id}`);
 
-    // Check if draft is complete
     const allFilled = updatedBlue.every(Boolean) && updatedRed.every(Boolean);
     if (allFilled) {
       await runAnalysis(updatedBlue, updatedRed);
     } else {
-      // Advance to next empty slot
       const next = nextEmptySlot(updatedBlue, updatedRed);
       if (next) setActiveSlot(next);
     }
-
     return {};
   }, [activeSlot, blue, red, addLog]);
 
-  // ── Remove a champion from a slot ──
+  // ── Remove a champion ─────────────────────────────────────────────────────
   const removeChampion = useCallback((team, idx) => {
     const arr = team === 'blue' ? blue : red;
     if (!arr[idx]) return;
-    const name = arr[idx].name;
+    const name = arr[idx].name ?? arr[idx].id;
 
     if (team === 'blue') setBlue(b => b.map((c, i) => i === idx ? null : c));
     else                 setRed(r  => r.map((c, i) => i === idx ? null : c));
@@ -135,12 +138,12 @@ export function useDraft() {
     setActiveSlot({ team, idx });
   }, [blue, red, addLog]);
 
-  // ── Activate a slot manually ──
+  // ── Activate a slot ───────────────────────────────────────────────────────
   const activateSlot = useCallback((team, idx) => {
     setActiveSlot({ team, idx });
   }, []);
 
-  // ── Run analysis via backend ──
+  // ── Run analysis ──────────────────────────────────────────────────────────
   const runAnalysis = useCallback(async (b = blue, r = red) => {
     setAnalyzing(true);
     addLog('system', 'Analyzing draft...');
@@ -159,7 +162,7 @@ export function useDraft() {
     }
   }, [blue, red, addLog]);
 
-  // ── Reset ──
+  // ── Reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     setBlue(Array(5).fill(null));
     setRed(Array(5).fill(null));
@@ -168,15 +171,13 @@ export function useDraft() {
     addLog('system', 'Draft reset.');
   }, [addLog]);
 
-  const filledCount = [...blue, ...red].filter(Boolean).length;
+  const filledCount     = [...blue, ...red].filter(Boolean).length;
   const isDraftComplete = filledCount === 10;
 
   return {
-    // State
-    blue, red, activeSlot, log, connection,
+    blue, red, activeSlot, log, connection, riotKey,
     version, championList, analysis, analyzing,
     isDraftComplete, filledCount,
-    // Actions
-    connect, pickChampion, removeChampion, activateSlot, reset,
+    connectRiotKey, pickChampion, removeChampion, activateSlot, reset,
   };
 }

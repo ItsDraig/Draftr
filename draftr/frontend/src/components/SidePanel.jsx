@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 function LogEntry({ entry }) {
   return (
@@ -9,55 +9,29 @@ function LogEntry({ entry }) {
   );
 }
 
-export default function SidePanel({ log, connection, onConnect, onReset }) {
-  const [keyValue, setKeyValue] = useState('');
+export default function SidePanel({ log, onReset }) {
+  const [open, setOpen] = useState(true);
   const logRef = useRef(null);
 
-  // Auto-scroll log
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
-  function handleConnect() {
-    if (!keyValue.trim()) return;
-    onConnect(keyValue.trim());
-  }
-
   return (
-    <div className="side-panel">
-      <div className="side-section">
-        <div className="side-title">Riot API Key</div>
-        <div className="key-input-wrap">
-          <input
-            type="password"
-            className="key-input"
-            placeholder="RGAPI-xxxxxxxx-..."
-            value={keyValue}
-            onChange={e => setKeyValue(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleConnect()}
-          />
-          <div className="key-note">
-            Development keys expire every 24h.<br />
-            Enter your key to enable live data.
-          </div>
-          <button
-            className="key-btn"
-            onClick={handleConnect}
-            disabled={connection === 'connecting'}
-          >
-            {connection === 'connecting' ? 'Connecting...' : 'Connect'}
-          </button>
+    <div className={`side-panel${open ? '' : ' collapsed'}`}>
+      {/* Header — always visible, clicking toggles */}
+      <div className="side-panel-header" onClick={() => setOpen(o => !o)}>
+        <span className="side-title" style={{ margin: 0 }}>Draft Log</span>
+        <span className="side-panel-toggle-icon">{open ? '◀' : '▶'}</span>
+      </div>
+
+      {/* Collapsible body */}
+      <div className="side-panel-body">
+        <div className="draft-log" ref={logRef}>
+          {log.map(entry => <LogEntry key={entry.id} entry={entry} />)}
         </div>
+        <button className="reset-btn" onClick={onReset}>↺ Reset Draft</button>
       </div>
-
-      <div className="side-title" style={{ padding: '16px 20px 0', marginBottom: 0 }}>
-        Draft Log
-      </div>
-      <div className="draft-log" ref={logRef}>
-        {log.map(entry => <LogEntry key={entry.id} entry={entry} />)}
-      </div>
-
-      <button className="reset-btn" onClick={onReset}>↺ Reset Draft</button>
     </div>
   );
 }

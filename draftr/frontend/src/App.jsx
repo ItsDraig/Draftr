@@ -12,9 +12,9 @@ export default function App() {
   const toastRef = useRef(null);
 
   const {
-    blue, red, activeSlot, log, connection,
+    blue, red, activeSlot, log, connection, riotKey,
     version, championList, analysis, isDraftComplete,
-    connect, pickChampion, removeChampion, activateSlot, reset,
+    connectRiotKey, pickChampion, removeChampion, activateSlot, reset,
   } = useDraft();
 
   const filledCount = [...blue, ...red].filter(Boolean).length;
@@ -26,7 +26,11 @@ export default function App() {
 
   return (
     <>
-      <Nav connection={connection} />
+      <Nav
+        connection={connection}
+        riotKey={riotKey}
+        onConnectRiotKey={connectRiotKey}
+      />
 
       <div className="app">
         {/* ── Draft Panel ── */}
@@ -60,8 +64,6 @@ export default function App() {
         {/* ── Side Panel ── */}
         <SidePanel
           log={log}
-          connection={connection}
-          onConnect={connect}
           onReset={reset}
         />
       </div>
