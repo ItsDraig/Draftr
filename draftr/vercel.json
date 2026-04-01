@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build --prefix frontend",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "npm install --prefix frontend",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/backend/main.py" },
+    { "source": "/health",   "destination": "/backend/main.py" },
+    { "source": "/(.*)",     "destination": "/index.html" }
+  ]
+}

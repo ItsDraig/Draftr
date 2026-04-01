@@ -18,7 +18,7 @@ frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = [frontend_url],
+    allow_origins     = ["http://localhost:5173", frontend_url, "https://draftr.win", "https://www.draftr.win"],
     allow_methods     = ["GET", "POST"],
     allow_headers     = ["*"],
 )
