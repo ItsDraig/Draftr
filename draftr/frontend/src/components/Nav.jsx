@@ -30,7 +30,7 @@ export default function Nav({ connection, riotKey, onConnectRiotKey }) {
   return (
     <div className="nav-wrapper">
       <nav className="nav">
-        <div className="nav-logo">draftr<span>.gg</span></div>
+        <div className="nav-logo">draftr<span>.win</span></div>
 
         <div className="nav-status">
           {/* DDragon status — always shown */}
