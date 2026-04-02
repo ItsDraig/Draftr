@@ -18,6 +18,6 @@
     { "src": "/api/(.*)", "dest": "backend/api/index.py" },
     { "src": "/health",   "dest": "backend/api/index.py" },
     { "handle": "filesystem" },
-    { "src": "/(.*)",     "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/frontend/$1" }
   ]
 }
