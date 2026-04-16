@@ -6,6 +6,7 @@ router = APIRouter()
 
 _data_dir = Path(__file__).parent.parent / "data"
 
+
 def _load(filename: str) -> dict:
     path = _data_dir / filename
     if not path.exists():
@@ -13,38 +14,25 @@ def _load(filename: str) -> dict:
     with path.open() as f:
         return json.load(f)
 
-# Loaded once at startup; re-start the server after running fetch_matrices.py
-MATCHUP_DB:  dict = _load("matchups.json")   # {role: {champion: {opponent: wr}}}
-SYNERGY_DB:  dict = _load("synergies.json")  # {champion: {ally: wr}}
 
-VALID_ROLES = {"top", "jungle", "mid", "adc", "support"}
+# Loaded once at startup; re-start the server after running fetch_matrices.py.
+# Format: { "Aatrox": { "strong": ["Varus", "DrMundo", "Teemo"],
+#                       "weak":   ["Kled", "Chogath", "Singed"] }, ... }
+MATCHUP_DB: dict = _load("matchups.json")
 
 
-@router.get("/matchups/{role}/{champion}")
-async def get_matchups(role: str, champion: str):
+@router.get("/matchups/{champion}")
+async def get_matchups(champion: str):
     """
-    Returns head-to-head win rates for *champion* in *role* vs every tracked opponent.
-    Win rates are from the champion's perspective (>50 = favourable).
+    Returns the general strong/weak counter lists for a champion.
+    'strong' = champions this champion counters.
+    'weak'   = champions that counter this champion.
+    Run fetch_matrices.py to populate this data.
     """
-    if role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail=f"role must be one of {sorted(VALID_ROLES)}")
-
-    role_data = MATCHUP_DB.get(role, {})
-    data = role_data.get(champion)
+    data = MATCHUP_DB.get(champion)
     if data is None:
-        raise HTTPException(status_code=404, detail=f"No matchup data for {champion} ({role}). Run fetch_matrices.py first.")
-
-    return {"champion": champion, "role": role, "matchups": data}
-
-
-@router.get("/synergies/{champion}")
-async def get_synergies(champion: str):
-    """
-    Returns synergy win rates for *champion* with every tracked ally.
-    Win rates are for the duo (>50 = the pair wins more than average).
-    """
-    data = SYNERGY_DB.get(champion)
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"No synergy data for {champion}. Run fetch_matrices.py first.")
-
-    return {"champion": champion, "synergies": data}
+        raise HTTPException(
+            status_code=404,
+            detail=f"No counter data for '{champion}'. Run fetch_matrices.py first.",
+        )
+    return {"champion": champion, **data}

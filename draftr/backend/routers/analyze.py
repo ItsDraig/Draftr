@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from models.schemas import AnalyzeRequest, AnalyzeResponse, TeamResult, Verdict, BreakdownRow
+from models.schemas import AnalyzeRequest, AnalyzeResponse, TeamResult, Verdict, BreakdownRow, CounterpickNote
 
 router = APIRouter()
 
@@ -19,11 +19,9 @@ def _load_json(filename: str) -> dict:
     with path.open() as f:
         return json.load(f)
 
-# Loaded at startup; re-start server after running fetch_matrices.py
-MATCHUP_DB: dict = _load_json("matchups.json")   # {role: {champ: {opponent: wr}}}
-SYNERGY_DB: dict = _load_json("synergies.json")  # {champ: {ally: wr}}
-
-ROLE_KEYS = ["top", "jungle", "mid", "adc", "support"]
+# Loaded at startup; re-start server after running fetch_matrices.py.
+# Format: { "Aatrox": { "strong": [...], "weak": [...] }, ... }
+MATCHUP_DB: dict = _load_json("matchups.json")
 
 
 # ── Static data ───────────────────────────────────────────────────────────────
@@ -149,61 +147,78 @@ def analyze_team(picks: list[str]) -> TeamResult:
 
 # ── Matrix scoring ────────────────────────────────────────────────────────────
 
-def matchup_scores(blue: list[str | None], red: list[str | None]) -> tuple[float | None, float | None]:
+# Same-role lane matchup gets full weight; cross-role matchup gets partial weight
+# (counters are based on default role but still relevant in team fights / skirmishes).
+SAME_ROLE_WEIGHT  = 1.0
+CROSS_ROLE_WEIGHT = 0.35
+
+
+def matchup_score(my_picks: list[str | None], opp_picks: list[str | None]) -> float | None:
     """
-    Compare each lane slot (index = role).  Returns average win rates for blue
-    and red respectively, or None if no matrix data is loaded.
-    Both values are from the perspective of each team (blue_wr + red_wr ≈ 100).
+    Score 0–100 representing how favourable this team's matchups are against the opponent.
+    50 = neutral, >50 = more favourable, <50 = more unfavourable.
+
+    Slot index encodes role (0=TOP … 4=SUP).  Same-slot comparisons use full
+    weight; cross-slot comparisons use CROSS_ROLE_WEIGHT so off-role counters
+    still contribute but don't dominate the score.
+
+    Returns None when matchups.json is empty (fetch_matrices.py hasn't been run).
     """
-    if not any(MATCHUP_DB.values()):
-        return None, None
-
-    blue_wrs: list[float] = []
-    red_wrs:  list[float] = []
-
-    for i, (b, r) in enumerate(zip(blue, red)):
-        if not b or not r:
-            continue
-        role      = ROLE_KEYS[i]
-        role_data = MATCHUP_DB.get(role, {})
-
-        # Blue's win rate vs red in this lane
-        wr = role_data.get(b, {}).get(r)
-        if wr is not None:
-            blue_wrs.append(float(wr))
-            red_wrs.append(100.0 - float(wr))
-            continue
-
-        # Try from red's perspective and invert
-        wr = role_data.get(r, {}).get(b)
-        if wr is not None:
-            blue_wrs.append(100.0 - float(wr))
-            red_wrs.append(float(wr))
-
-    if not blue_wrs:
-        return None, None
-
-    return round(sum(blue_wrs) / len(blue_wrs), 1), round(sum(red_wrs) / len(red_wrs), 1)
-
-
-def synergy_score(picks: list[str | None]) -> float | None:
-    """
-    Average synergy win rate for all ally pairs in a team.
-    Returns None if no synergy data is loaded.
-    """
-    if not SYNERGY_DB:
+    if not MATCHUP_DB:
         return None
 
-    filled = [p for p in picks if p]
-    wrs: list[float] = []
+    favorable = unfavorable = 0.0
 
-    for i, a in enumerate(filled):
-        for b in filled[i + 1:]:
-            wr = SYNERGY_DB.get(a, {}).get(b) or SYNERGY_DB.get(b, {}).get(a)
-            if wr is not None:
-                wrs.append(float(wr))
+    for i, my in enumerate(my_picks):
+        if not my:
+            continue
+        data   = MATCHUP_DB.get(my, {})
+        strong = set(data.get("strong", []))
+        weak   = set(data.get("weak",   []))
 
-    return round(sum(wrs) / len(wrs), 1) if wrs else None
+        for j, opp in enumerate(opp_picks):
+            if not opp:
+                continue
+            weight = SAME_ROLE_WEIGHT if i == j else CROSS_ROLE_WEIGHT
+            if opp in strong:
+                favorable   += weight
+            elif opp in weak:
+                unfavorable += weight
+
+    total = favorable + unfavorable
+    if total == 0:
+        return None
+
+    return round((favorable / total) * 100, 1)
+
+
+ROLE_LABELS = ["TOP", "JGL", "MID", "BOT", "SUP"]
+
+
+def get_counterpick_notes(
+    my_picks: list[str | None],
+    opp_picks: list[str | None],
+) -> list[CounterpickNote]:
+    """
+    Returns same-role counterpick relationships only (slot index = role).
+    favorable=True  → my champion counters theirs.
+    favorable=False → their champion counters mine.
+    """
+    if not MATCHUP_DB:
+        return []
+
+    notes: list[CounterpickNote] = []
+    for i, (my, opp) in enumerate(zip(my_picks, opp_picks)):
+        if not my or not opp:
+            continue
+        data = MATCHUP_DB.get(my, {})
+        role = ROLE_LABELS[i]
+        if opp in data.get("strong", []):
+            notes.append(CounterpickNote(my_champ=my, opp_champ=opp, role=role, favorable=True))
+        elif opp in data.get("weak", []):
+            notes.append(CounterpickNote(my_champ=my, opp_champ=opp, role=role, favorable=False))
+
+    return notes
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -218,23 +233,23 @@ async def analyze(req: AnalyzeRequest):
     blue_result = analyze_team([p for p in req.blue if p])
     red_result  = analyze_team([p for p in req.red  if p])
 
-    # ── Matrix rows (appended only when data is available) ────────────────────
-    blue_mu, red_mu = matchup_scores(req.blue, req.red)
-    blue_syn        = synergy_score(req.blue)
-    red_syn         = synergy_score(req.red)
+    # ── Matchup rows (appended only when matchups.json has been populated) ────
+    blue_mu = matchup_score(req.blue, req.red)
+    red_mu  = matchup_score(req.red,  req.blue)
 
-    def extra_rows(mu: float | None, syn: float | None) -> list[BreakdownRow]:
-        rows = []
-        if mu  is not None: rows.append(BreakdownRow(label="Matchups",  value=round(mu),  max=100))
-        if syn is not None: rows.append(BreakdownRow(label="Synergies", value=round(syn), max=100))
-        return rows
+    blue_notes = get_counterpick_notes(req.blue, req.red)
+    red_notes  = get_counterpick_notes(req.red,  req.blue)
 
-    blue_result = blue_result.model_copy(
-        update={"breakdown": blue_result.breakdown + extra_rows(blue_mu, blue_syn)}
-    )
-    red_result = red_result.model_copy(
-        update={"breakdown": red_result.breakdown + extra_rows(red_mu, red_syn)}
-    )
+    blue_updates: dict = {"counterpicks": blue_notes}
+    red_updates:  dict = {"counterpicks": red_notes}
+
+    if blue_mu is not None:
+        blue_updates["breakdown"] = blue_result.breakdown + [BreakdownRow(label="Matchups", value=round(blue_mu), max=100)]
+    if red_mu is not None:
+        red_updates["breakdown"]  = red_result.breakdown  + [BreakdownRow(label="Matchups", value=round(red_mu),  max=100)]
+
+    blue_result = blue_result.model_copy(update=blue_updates)
+    red_result  = red_result.model_copy(update=red_updates)
 
     delta   = abs(blue_result.score - red_result.score)
     favored = "blue" if blue_result.score >= red_result.score else "red"

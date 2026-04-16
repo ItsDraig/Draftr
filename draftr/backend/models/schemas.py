@@ -21,15 +21,23 @@ class BreakdownRow(BaseModel):
     max:   int
 
 
+class CounterpickNote(BaseModel):
+    my_champ:  str   # DDragon ID of this team's champion
+    opp_champ: str   # DDragon ID of the opposing champion
+    role:      str   # "TOP" | "JGL" | "MID" | "BOT" | "SUP"
+    favorable: bool  # True = my_champ counters opp_champ; False = opp_champ counters my_champ
+
+
 class TeamResult(BaseModel):
     label:     str
     grade:     Literal["S", "A", "B", "C", "D"]
     score:     float
     phys_pct:  int
     magic_pct: int
-    strengths:  list[str]
-    weaknesses: list[str]
-    breakdown:  list[BreakdownRow]
+    strengths:   list[str]
+    weaknesses:  list[str]
+    breakdown:   list[BreakdownRow]
+    counterpicks: list[CounterpickNote] = []
 
 
 class Verdict(BaseModel):

@@ -44,6 +44,30 @@ function Breakdown({ rows, color }) {
   );
 }
 
+function CounterpickNotes({ notes }) {
+  if (!notes || notes.length === 0) return null;
+  return (
+    <div className="sw-section">
+      <div className="sw-label">Counterpicks</div>
+      <div className="sw-list">
+        {notes.map((n, i) => (
+          <div className="sw-item" key={i}>
+            <span className={`sw-icon ${n.favorable ? 'str' : 'wk'}`}>
+              {n.favorable ? '▲' : '▼'}
+            </span>
+            <span>
+              {n.favorable
+                ? <><strong>{n.my_champ}</strong> counters {n.opp_champ} <span style={{ opacity: 0.5 }}>({n.role})</span></>
+                : <>{n.opp_champ} counters <strong>{n.my_champ}</strong> <span style={{ opacity: 0.5 }}>({n.role})</span></>
+              }
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StrengthsWeaknesses({ strengths, weaknesses }) {
   return (
     <div className="sw-section">
@@ -86,6 +110,7 @@ function TeamCard({ result, side }) {
       </div>
       <DamageBar phys_pct={result.phys_pct} magic_pct={result.magic_pct} />
       <Breakdown rows={result.breakdown} color={color} />
+      <CounterpickNotes notes={result.counterpicks} />
       <StrengthsWeaknesses strengths={result.strengths} weaknesses={result.weaknesses} />
     </div>
   );

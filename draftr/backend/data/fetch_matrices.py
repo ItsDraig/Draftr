@@ -1,231 +1,175 @@
 #!/usr/bin/env python3
 """
-Fetch matchup and synergy matrices from Lolalytics.
+Scrape general counter data (strong/weak vs 3 champions each) from Lolalytics
+and save to backend/data/matchups.json.
 
-Run once (or after each patch) to populate:
-  backend/data/matchups.json   — per-role head-to-head win rates
-  backend/data/synergies.json  — ally synergy win rates
+Data source: lolalytics.com/lol/{champion}/build/  — the QW_1 span contains:
+  "X is a strong counter to A, B & C while X is countered most by D, E & F"
 
 Usage (from the backend/ directory):
-  python data/fetch_matrices.py --dry-run      # inspect one champion's raw response
-  python data/fetch_matrices.py                # full fetch (~15 min, 860 requests)
-  python data/fetch_matrices.py --champ Aatrox # single champion, all roles
+  python data/fetch_matrices.py --dry-run          # test one champion, print raw output
+  python data/fetch_matrices.py --champ Aatrox     # fetch & save a single champion
+  python data/fetch_matrices.py                    # full run (~172 champions)
 """
 
 import json
+import re
 import time
 import argparse
-import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BASE_URL  = "https://lolalytics.com/api/champion1/"
-TIER      = "emerald_plus"
-QUEUE     = "420"           # ranked solo/duo
-PATCH     = "1"             # "1" = latest patch on Lolalytics
+BASE_URL  = "https://lolalytics.com/lol/{slug}/build/"
+DELAY     = 0.5   # seconds between requests
 
-ROLE_KEYS = ["top", "jungle", "mid", "adc", "support"]
-DELAY     = 0.35            # seconds between requests — be a good citizen
-
-DATA_DIR    = Path(__file__).parent
-CHAMPS_FILE = DATA_DIR / "champions.json"
+DATA_DIR      = Path(__file__).parent
+CHAMPS_FILE   = DATA_DIR / "champions.json"
 OUT_MATCHUPS  = DATA_DIR / "matchups.json"
-OUT_SYNERGIES = DATA_DIR / "synergies.json"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Referer": "https://lolalytics.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept":          "text/html,application/xhtml+xml",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
-# ── HTTP ──────────────────────────────────────────────────────────────────────
+# URL slug → DDragon ID  (for parsing opponent hrefs in the response HTML)
+SLUG_OVERRIDES = {
+    "wukong": "MonkeyKing",
+}
 
-def fetch(champion: str, lane: str) -> dict:
-    params = urlencode({
-        "patch":  PATCH,
-        "tier":   TIER,
-        "region": "all",
-        "queue":  QUEUE,
-        "pick":   champion,
-        "lane":   lane,
-    })
-    url = f"{BASE_URL}?{params}"
+# DDragon ID → URL slug  (for building the fetch URL when they differ)
+ID_TO_URL_SLUG = {
+    "MonkeyKing": "wukong",
+}
+
+# ── Slug helpers ──────────────────────────────────────────────────────────────
+
+def to_slug(name: str) -> str:
+    """'DrMundo' → 'drmundo',  'KhaZix' → 'khazix'"""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def build_slug_map(champion_ids: list[str]) -> dict[str, str]:
+    """Build {lolalytics_slug: ddragon_id} lookup, with manual overrides."""
+    m = {to_slug(c): c for c in champion_ids}
+    m.update(SLUG_OVERRIDES)
+    return m
+
+
+# ── HTML fetch & parse ────────────────────────────────────────────────────────
+
+QW1_RE   = re.compile(r'q:key="QW_1"(.*?)</span>', re.DOTALL)
+# Matches the opponent slug in hrefs like /lol/aatrox/vs/drmundo/build/
+HREF_RE  = re.compile(r'/lol/[^/]+/vs/([^/?]+)/build/')
+
+
+def fetch_page(slug: str) -> str:
+    url = BASE_URL.format(slug=slug)
     req = Request(url, headers=HEADERS)
     with urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode())
+        return resp.read().decode("utf-8", errors="replace")
 
 
-# ── Parsers ───────────────────────────────────────────────────────────────────
-
-def _entries_from(block) -> list[dict]:
-    """Normalise a block that might be a dict-of-lists or a list."""
-    if isinstance(block, list):
-        return block
-    if isinstance(block, dict):
-        for key in ("counters", "synergies", "data", "picks"):
-            if isinstance(block.get(key), list):
-                return block[key]
-    return []
-
-
-def parse_matchups(data: dict) -> dict[str, float]:
+def parse_counters(html: str, slug_map: dict) -> tuple[list[str], list[str]]:
     """
-    Return {opponent_champion: win_rate} from a Lolalytics champion response.
-
-    Lolalytics stores this under a 'counters' key whose entries look like:
-      {"n": "Darius", "wr": 48.2, "games": 1234}
-    or as positional arrays: [wr, games, "Darius"]
+    Returns (strong_ddragon_ids, weak_ddragon_ids) — each a list of up to 3 IDs.
+    'strong' = this champion counters them.
+    'weak'   = this champion is countered by them.
     """
-    results: dict[str, float] = {}
+    m = QW1_RE.search(html)
+    if not m:
+        return [], []
 
-    for top_key in ("counters", "counter", "matchups"):
-        block = data.get(top_key)
-        if not block:
-            continue
-        for entry in _entries_from(block):
-            if isinstance(entry, dict):
-                name = entry.get("n") or entry.get("name") or entry.get("champion")
-                wr   = entry.get("wr") or entry.get("winRate") or entry.get("win_rate")
-            elif isinstance(entry, (list, tuple)) and len(entry) >= 3:
-                # [win_rate, games, champion_name]
-                wr, name = entry[0], entry[2]
-            else:
-                continue
-            if name and wr is not None:
-                results[str(name)] = round(float(wr), 2)
-        if results:
-            return results
+    slugs = HREF_RE.findall(m.group(1))   # up to 6: first 3 strong, last 3 weak
 
-    return results
+    def resolve(s: str) -> str | None:
+        return slug_map.get(to_slug(s))
 
-
-def parse_synergies(data: dict) -> dict[str, float]:
-    """
-    Return {ally_champion: win_rate} from a Lolalytics champion response.
-    """
-    results: dict[str, float] = {}
-
-    for top_key in ("synergies", "synergy", "allies", "lane"):
-        block = data.get(top_key)
-        if not block:
-            continue
-        # 'lane' often contains a nested 'synergy' list
-        if isinstance(block, dict) and top_key == "lane":
-            block = block.get("synergy") or block.get("synergies") or {}
-        for entry in _entries_from(block):
-            if isinstance(entry, dict):
-                name = entry.get("n") or entry.get("name") or entry.get("champion")
-                wr   = entry.get("wr") or entry.get("winRate") or entry.get("win_rate")
-            elif isinstance(entry, (list, tuple)) and len(entry) >= 3:
-                wr, name = entry[0], entry[2]
-            else:
-                continue
-            if name and wr is not None:
-                results[str(name)] = round(float(wr), 2)
-        if results:
-            return results
-
-    return results
+    strong = [r for s in slugs[:3] if (r := resolve(s))]
+    weak   = [r for s in slugs[3:6] if (r := resolve(s))]
+    return strong, weak
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def load_champion_names() -> list[str]:
+def load_champion_ids() -> list[str]:
     with CHAMPS_FILE.open() as f:
         return list(json.load(f)["champions"].keys())
 
 
-def fetch_champion(champ: str, matchups: dict, synergies: dict, verbose: bool = True):
-    """Fetch all roles for one champion and merge into the accumulator dicts."""
-    synergy_acc: dict[str, list[float]] = {}
-
-    for role in ROLE_KEYS:
-        try:
-            data = fetch(champ, role)
-            matchups[role][champ] = parse_matchups(data)
-            for ally, wr in parse_synergies(data).items():
-                synergy_acc.setdefault(ally, []).append(wr)
-            if verbose:
-                mu_count = len(matchups[role][champ])
-                print(f"  {role:8s}  {mu_count} matchups")
-        except HTTPError as e:
-            print(f"  {role:8s}  HTTP {e.code} — skipped")
-        except Exception as e:
-            print(f"  {role:8s}  ERROR: {e} — skipped")
-        time.sleep(DELAY)
-
-    # Average synergy win rate across roles
-    synergies[champ] = {
-        ally: round(sum(wrs) / len(wrs), 2)
-        for ally, wrs in synergy_acc.items()
-    }
+def fetch_champion(champ_id: str, slug_map: dict) -> tuple[list[str], list[str]]:
+    """Fetch one champion and return (strong, weak) DDragon ID lists."""
+    url_slug = ID_TO_URL_SLUG.get(champ_id, to_slug(champ_id))
+    html = fetch_page(url_slug)
+    return parse_counters(html, slug_map)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch Lolalytics matchup/synergy matrices")
+    parser = argparse.ArgumentParser(description="Fetch Lolalytics counter data")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Fetch Aatrox/top only and print the raw JSON structure")
+                        help="Fetch Aatrox only, print raw QW_1 content and parsed result")
     parser.add_argument("--champ", metavar="NAME",
-                        help="Fetch a single champion (all roles) then save")
+                        help="Fetch a single champion then save (e.g. --champ Aatrox)")
     args = parser.parse_args()
 
-    # ── Dry run ──
+    all_ids  = load_champion_ids()
+    slug_map = build_slug_map(all_ids)
+
+    # ── Dry run ──────────────────────────────────────────────────────────────
     if args.dry_run:
-        print("Dry run: fetching Aatrox/top …")
-        data = fetch("Aatrox", "top")
-        print("\nTop-level keys:", list(data.keys()))
-        print("\nFull response (truncated to 4 000 chars):")
-        print(json.dumps(data, indent=2)[:4000])
-        print("\nParsed matchups:", dict(list(parse_matchups(data).items())[:5]))
-        print("Parsed synergies:", dict(list(parse_synergies(data).items())[:5]))
+        print("Dry run: fetching Aatrox …")
+        html  = fetch_page("aatrox")
+        m     = QW1_RE.search(html)
+        print("\nQW_1 raw content:")
+        print(m.group(1) if m else "(QW_1 span not found)")
+        strong, weak = parse_counters(html, slug_map)
+        print(f"\nParsed  strong: {strong}")
+        print(f"Parsed  weak:   {weak}")
         return
 
-    # ── Load existing data (resume-friendly) ──
-    matchups: dict  = json.loads(OUT_MATCHUPS.read_text())  if OUT_MATCHUPS.exists()  else {r: {} for r in ROLE_KEYS}
-    synergies: dict = json.loads(OUT_SYNERGIES.read_text()) if OUT_SYNERGIES.exists() else {}
+    # ── Load existing data (so we can resume partial runs) ───────────────────
+    matchups: dict = (
+        json.loads(OUT_MATCHUPS.read_text()) if OUT_MATCHUPS.exists() else {}
+    )
 
-    # ── Single champion ──
-    if args.champ:
-        print(f"Fetching {args.champ} …")
-        fetch_champion(args.champ, matchups, synergies)
-        OUT_MATCHUPS.write_text(json.dumps(matchups, indent=2))
-        OUT_SYNERGIES.write_text(json.dumps(synergies, indent=2))
-        print("Saved.")
-        return
+    targets = [args.champ] if args.champ else all_ids
+    total   = len(targets)
 
-    # ── Full run ──
-    all_champs = load_champion_names()
-    total      = len(all_champs)
-    done       = sum(1 for c in all_champs if c in synergies)  # rough resume count
-
-    print(f"Fetching {total} champions × {len(ROLE_KEYS)} roles "
-          f"({total * len(ROLE_KEYS)} requests, ~{total * len(ROLE_KEYS) * DELAY / 60:.0f} min)")
-    if done:
-        print(f"Resuming — {done}/{total} already fetched")
-
-    for i, champ in enumerate(all_champs, 1):
-        if champ in synergies and all(champ in matchups[r] for r in ROLE_KEYS):
-            print(f"[{i}/{total}] {champ} — already cached, skipping")
+    for i, champ_id in enumerate(targets, 1):
+        if champ_id not in all_ids:
+            print(f"Unknown champion: {champ_id}")
             continue
 
-        print(f"[{i}/{total}] {champ}")
-        fetch_champion(champ, matchups, synergies)
+        if not args.champ and champ_id in matchups:
+            print(f"[{i}/{total}] {champ_id} — already cached, skipping")
+            continue
 
-        # Save incrementally every 10 champions
-        if i % 10 == 0:
+        print(f"[{i}/{total}] {champ_id} … ", end="", flush=True)
+        try:
+            strong, weak = fetch_champion(champ_id, slug_map)
+            matchups[champ_id] = {"strong": strong, "weak": weak}
+            print(f"strong={strong}  weak={weak}")
+        except HTTPError as e:
+            print(f"HTTP {e.code} — skipped")
+        except Exception as e:
+            print(f"ERROR: {e} — skipped")
+
+        time.sleep(DELAY)
+
+        # Incremental save every 20 champions
+        if i % 20 == 0:
             OUT_MATCHUPS.write_text(json.dumps(matchups, indent=2))
-            OUT_SYNERGIES.write_text(json.dumps(synergies, indent=2))
-            print(f"  → checkpoint saved ({i}/{total})")
+            print(f"  checkpoint saved ({i}/{total})")
 
     OUT_MATCHUPS.write_text(json.dumps(matchups, indent=2))
-    OUT_SYNERGIES.write_text(json.dumps(synergies, indent=2))
-    print(f"\nDone. {total} champions written to matchups.json and synergies.json")
+    print(f"\nDone. {len(matchups)} champions saved to matchups.json")
 
 
 if __name__ == "__main__":
