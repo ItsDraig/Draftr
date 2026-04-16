@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-from routers import version, champions, analyze
+from routers import version, champions, analyze, matchups
 
 load_dotenv()
 
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(version.router,   prefix="/api", tags=["version"])
 app.include_router(champions.router, prefix="/api", tags=["champions"])
 app.include_router(analyze.router,   prefix="/api", tags=["analyze"])
+app.include_router(matchups.router,  prefix="/api", tags=["matchups"])
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

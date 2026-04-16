@@ -7,9 +7,23 @@ router = APIRouter()
 
 # ── Load champion DB ──────────────────────────────────────────────────────────
 
-_data_path = Path(__file__).parent.parent / "data" / "champions.json"
-with _data_path.open() as f:
+_data_dir  = Path(__file__).parent.parent / "data"
+
+with (_data_dir / "champions.json").open() as f:
     CHAMP_DB: dict = json.load(f).get("champions", {})
+
+def _load_json(filename: str) -> dict:
+    path = _data_dir / filename
+    if not path.exists():
+        return {}
+    with path.open() as f:
+        return json.load(f)
+
+# Loaded at startup; re-start server after running fetch_matrices.py
+MATCHUP_DB: dict = _load_json("matchups.json")   # {role: {champ: {opponent: wr}}}
+SYNERGY_DB: dict = _load_json("synergies.json")  # {champ: {ally: wr}}
+
+ROLE_KEYS = ["top", "jungle", "mid", "adc", "support"]
 
 
 # ── Static data ───────────────────────────────────────────────────────────────
@@ -133,6 +147,65 @@ def analyze_team(picks: list[str]) -> TeamResult:
     )
 
 
+# ── Matrix scoring ────────────────────────────────────────────────────────────
+
+def matchup_scores(blue: list[str | None], red: list[str | None]) -> tuple[float | None, float | None]:
+    """
+    Compare each lane slot (index = role).  Returns average win rates for blue
+    and red respectively, or None if no matrix data is loaded.
+    Both values are from the perspective of each team (blue_wr + red_wr ≈ 100).
+    """
+    if not any(MATCHUP_DB.values()):
+        return None, None
+
+    blue_wrs: list[float] = []
+    red_wrs:  list[float] = []
+
+    for i, (b, r) in enumerate(zip(blue, red)):
+        if not b or not r:
+            continue
+        role      = ROLE_KEYS[i]
+        role_data = MATCHUP_DB.get(role, {})
+
+        # Blue's win rate vs red in this lane
+        wr = role_data.get(b, {}).get(r)
+        if wr is not None:
+            blue_wrs.append(float(wr))
+            red_wrs.append(100.0 - float(wr))
+            continue
+
+        # Try from red's perspective and invert
+        wr = role_data.get(r, {}).get(b)
+        if wr is not None:
+            blue_wrs.append(100.0 - float(wr))
+            red_wrs.append(float(wr))
+
+    if not blue_wrs:
+        return None, None
+
+    return round(sum(blue_wrs) / len(blue_wrs), 1), round(sum(red_wrs) / len(red_wrs), 1)
+
+
+def synergy_score(picks: list[str | None]) -> float | None:
+    """
+    Average synergy win rate for all ally pairs in a team.
+    Returns None if no synergy data is loaded.
+    """
+    if not SYNERGY_DB:
+        return None
+
+    filled = [p for p in picks if p]
+    wrs: list[float] = []
+
+    for i, a in enumerate(filled):
+        for b in filled[i + 1:]:
+            wr = SYNERGY_DB.get(a, {}).get(b) or SYNERGY_DB.get(b, {}).get(a)
+            if wr is not None:
+                wrs.append(float(wr))
+
+    return round(sum(wrs) / len(wrs), 1) if wrs else None
+
+
 # ── Route ─────────────────────────────────────────────────────────────────────
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -142,11 +215,26 @@ async def analyze(req: AnalyzeRequest):
     if len(all_picks) != len(set(all_picks)):
         raise HTTPException(status_code=400, detail="Duplicate champion detected across teams.")
 
-    blue_picks = [p for p in req.blue if p]
-    red_picks  = [p for p in req.red  if p]
+    blue_result = analyze_team([p for p in req.blue if p])
+    red_result  = analyze_team([p for p in req.red  if p])
 
-    blue_result = analyze_team(blue_picks)
-    red_result  = analyze_team(red_picks)
+    # ── Matrix rows (appended only when data is available) ────────────────────
+    blue_mu, red_mu = matchup_scores(req.blue, req.red)
+    blue_syn        = synergy_score(req.blue)
+    red_syn         = synergy_score(req.red)
+
+    def extra_rows(mu: float | None, syn: float | None) -> list[BreakdownRow]:
+        rows = []
+        if mu  is not None: rows.append(BreakdownRow(label="Matchups",  value=round(mu),  max=100))
+        if syn is not None: rows.append(BreakdownRow(label="Synergies", value=round(syn), max=100))
+        return rows
+
+    blue_result = blue_result.model_copy(
+        update={"breakdown": blue_result.breakdown + extra_rows(blue_mu, blue_syn)}
+    )
+    red_result = red_result.model_copy(
+        update={"breakdown": red_result.breakdown + extra_rows(red_mu, red_syn)}
+    )
 
     delta   = abs(blue_result.score - red_result.score)
     favored = "blue" if blue_result.score >= red_result.score else "red"
